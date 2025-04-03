@@ -4,17 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>抽獎系統 - 手機端</title>
+    <link rel="stylesheet" href="styles.css"> <!-- Link to external CSS -->
     <style>
         body {
             font-family: sans-serif;
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
+            justify-content: flex-start; /* Align items to the top */
             min-height: 100vh;
             background-color: #f0f2f5; /* Slightly different background */
             margin: 0;
             padding: 20px;
+            padding-top: 30px;
             box-sizing: border-box;
             text-align: center;
         }
@@ -103,26 +105,55 @@
              color: #e67e22; /* Orange for partner name */
              font-weight: bolder;
         }
-
+        #card-display {
+            margin-top: 30px;
+            width: 80%;
+            max-width: 250px; /* Smaller card on mobile */
+            perspective: 1000px;
+            margin-bottom: 30px;
+        }
+        .card-placeholder {
+             aspect-ratio: 2 / 3;
+             background-color: #ddd;
+             border: 2px dashed #aaa;
+             color: #888;
+             display: flex;
+             justify-content: center;
+             align-items: center;
+             font-size: 1em;
+             border-radius: 8px;
+             text-align: center;
+             padding: 10px;
+             box-sizing: border-box;
+             height: 280px; /* Fixed height for placeholder */
+        }
     </style>
 </head>
 <body>
     <div id="status">請輸入您的名字加入</div>
 
     <div id="join-section">
-        <input type="text" id="name-input" placeholder="請輸入您的名字" />
+        <input type="text" id="name-input" placeholder="請輸入您的名字(本名)" />
         <button id="join-button">加入</button>
         <div id="join-error"></div>
     </div>
 
     <div id="confirm-section" style="display: none;">
         <p><strong id="display-name"></strong>，您已成功加入！</p>
-        <button id="confirm-button">抽牌 (確認參與)</button>
+         <!-- Card display area for mobile -->
+         <div id="card-display">
+             <div class="card-placeholder">點擊下方按鈕確認<br/>並抽取您的視覺卡牌</div>
+         </div>
+        <button id="confirm-button">確認參與 (抽牌)</button> <!-- Button text updated -->
         <div id="confirm-error"></div>
     </div>
 
     <div id="waiting-section" style="display: none;">
         <p>抽牌完成！請等待所有人抽完後開始配對...</p>
+         <!-- Show drawn card (backside) while waiting -->
+         <div id="card-display-waiting">
+             <!-- Card will be rendered here by JS -->
+         </div>
     </div>
 
     <div id="pairing-info" style="display: none;">
@@ -131,9 +162,7 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
-        const socket = io({
-            transports: ['websocket'] // Maintain forced WebSocket
-        });
+        const socket = io({ transports: ['websocket'] });
 
         // Get elements
         const statusDiv = document.getElementById('status');
@@ -143,6 +172,8 @@
         const joinErrorDiv = document.getElementById('join-error');
         const confirmSection = document.getElementById('confirm-section');
         const displayName = document.getElementById('display-name');
+        const cardDisplayConfirm = document.getElementById('card-display'); // Placeholder before confirm
+        const cardDisplayWaiting = document.getElementById('card-display-waiting'); // Area after confirm
         const confirmButton = document.getElementById('confirm-button');
         const confirmErrorDiv = document.getElementById('confirm-error');
         const waitingSection = document.getElementById('waiting-section');
@@ -150,6 +181,7 @@
 
         let joinedName = null;
         let isConfirmed = false;
+        let assignedCardId = null;
 
         // --- Initial State ---
         function resetUI() {
@@ -159,126 +191,135 @@
             waitingSection.style.display = 'none';
             pairingInfoDiv.style.display = 'none';
             pairingInfoDiv.innerHTML = '';
+            cardDisplayConfirm.innerHTML = '<div class="card-placeholder">點擊下方按鈕確認<br/>並抽取您的視覺卡牌</div>'; // Reset placeholder
+            cardDisplayWaiting.innerHTML = ''; // Clear waiting card display
             joinErrorDiv.textContent = '';
             confirmErrorDiv.textContent = '';
             nameInput.value = '';
             nameInput.disabled = false;
             joinButton.disabled = false;
             confirmButton.disabled = false;
+            confirmButton.textContent = '確認參與 (抽牌)';
             joinedName = null;
             isConfirmed = false;
+            assignedCardId = null;
         }
-
-        resetUI(); // Initialize UI
+        resetUI();
 
         // --- Socket.IO Event Listeners ---
-        socket.on('connect', () => {
-            console.log('Connected to server', socket.id);
-            resetUI();
-        });
+        socket.on('connect', () => { console.log('Connected'); resetUI(); });
+        socket.on('disconnect', () => { statusDiv.textContent = '與伺服器斷線...'; joinButton.disabled = true; confirmButton.disabled = true; });
+        socket.on('connect_error', (err) => { statusDiv.textContent = `連線錯誤: ${err.message}`; });
 
-        socket.on('disconnect', () => {
-            console.log('Disconnected from server');
-            statusDiv.textContent = '與伺服器斷線，請重新整理頁面';
-            joinButton.disabled = true;
-            confirmButton.disabled = true;
-        });
-
-        socket.on('connect_error', (err) => {
-            console.error('Connection error:', err);
-            statusDiv.textContent = `連線錯誤: ${err.message}`;
-        });
-
-        // Join success
         socket.on('joinSuccess', (data) => {
-            console.log('Joined successfully as', data.name);
             joinedName = data.name;
             displayName.textContent = joinedName;
-            statusDiv.textContent = '加入成功！請點擊下方按鈕確認參與配對';
+            statusDiv.textContent = '加入成功！請點擊下方按鈕確認';
             joinSection.style.display = 'none';
             confirmSection.style.display = 'block';
             joinErrorDiv.textContent = '';
         });
+        socket.on('joinError', (message) => { joinErrorDiv.textContent = message; nameInput.disabled = false; joinButton.disabled = false; });
 
-        // Join failure
-        socket.on('joinError', (message) => {
-            console.error('Join error:', message);
-            joinErrorDiv.textContent = message;
-            nameInput.disabled = false;
-            joinButton.disabled = false;
-        });
-
-        // Confirm success
         socket.on('confirmSuccess', () => {
-            console.log('Participation confirmed');
             isConfirmed = true;
             statusDiv.textContent = '確認成功！等待配對開始...';
             confirmSection.style.display = 'none';
             waitingSection.style.display = 'block';
             confirmErrorDiv.textContent = '';
+            // Card rendering happens in cardAssigned
         });
-
-        // Confirm failure
-        socket.on('confirmError', (message) => {
-            console.error('Confirm error:', message);
-            confirmErrorDiv.textContent = message;
-            confirmButton.disabled = false; // Allow retry
-        });
-
-        // Already confirmed
-        socket.on('alreadyConfirmed', (message) => {
-             console.log('Already confirmed');
-             isConfirmed = true; // Sync state
+        socket.on('confirmError', (message) => { confirmErrorDiv.textContent = message; confirmButton.disabled = false; });
+        socket.on('alreadyConfirmed', () => {
+             isConfirmed = true;
              statusDiv.textContent = '您已確認過，等待配對開始...';
              confirmSection.style.display = 'none';
              waitingSection.style.display = 'block';
-             confirmErrorDiv.textContent = ''; // Clear potential error message
+             // If already confirmed, we might need to re-request the assigned card
+             // Or server should send it upon connection if already confirmed.
+             // For now, assume cardAssigned will be received if needed.
         });
 
-        // Received pairing result
+        // *** NEW: Handle assigned visual card ***
+        socket.on('cardAssigned', (data) => {
+            assignedCardId = data.cardId;
+            console.log(`Assigned visual card ID: ${assignedCardId}`);
+            // Render the card (backside) in the waiting section
+            renderCard(cardDisplayWaiting, assignedCardId, false, null); // Backside, no name
+        });
+
         socket.on('yourPairing', (data) => {
-            console.log('Received my pairing info:', data);
-            waitingSection.style.display = 'none'; // Hide waiting message
-            pairingInfoDiv.style.display = 'block'; // Show pairing result area
+            waitingSection.style.display = 'none';
+            pairingInfoDiv.style.display = 'block';
             if (data.partner) {
                 pairingInfoDiv.innerHTML = `🎉 您在第 ${data.group} 組<br>與 <span>${data.partner.name}</span> 配對成功！`;
             } else {
                 pairingInfoDiv.innerHTML = `😢 您在第 ${data.group} 組，本輪輪空。`;
             }
             statusDiv.textContent = '配對結果已產生！';
+            // Optionally, reveal the mobile card visually as well
+            // renderCard(cardDisplayWaiting, assignedCardId, true, joinedName); // Reveal with name
         });
 
-        // Received game reset command
         socket.on('gameReset', () => {
-            console.log('Game has been reset by admin');
-            alert('遊戲已重設，請重新加入！'); // Alert user
-            resetUI(); // Reset UI to initial state
+            alert('遊戲已重設，請重新加入！');
+            resetUI();
         });
 
         // --- Button Events ---
         joinButton.addEventListener('click', () => {
-            const name = nameInput.value;
-            if (!name || name.trim() === '') {
-                joinErrorDiv.textContent = '請輸入您的名字！';
-                return;
-            }
-            console.log(`Attempting to join as ${name.trim()}`);
+            const name = nameInput.value.trim();
+            if (!name) { joinErrorDiv.textContent = '請輸入您的名字！'; return; }
             joinErrorDiv.textContent = '';
-            nameInput.disabled = true; // Prevent double clicks
+            nameInput.disabled = true;
             joinButton.disabled = true;
-            socket.emit('joinGame', name.trim());
+            socket.emit('joinGame', name);
         });
 
         confirmButton.addEventListener('click', () => {
-            if (!joinedName) {
-                confirmErrorDiv.textContent = '發生錯誤，請重新整理頁面。';
-                return;
-            }
-            console.log('Confirming participation...');
+            if (!joinedName) { confirmErrorDiv.textContent = '發生錯誤，請重新整理'; return; }
             confirmErrorDiv.textContent = '';
-            confirmButton.disabled = true; // Prevent double clicks
+            confirmButton.disabled = true;
+            confirmButton.textContent = '確認中...'; // Update button text
             socket.emit('confirmParticipation');
         });
+
+        // --- Rendering Function for Mobile Card ---
+        // (Simplified version of screen render, uses styles.css)
+        function renderCard(container, cardId, revealed, name) {
+             if (!cardId) {
+                 container.innerHTML = '<div class="card-placeholder">等待分配卡牌...</div>';
+                 return;
+             }
+             container.innerHTML = ''; // Clear previous
+             const cardElement = document.createElement('div');
+             cardElement.classList.add('card'); // Use base card class
+             cardElement.dataset.cardId = cardId;
+             if (revealed) cardElement.classList.add('revealed');
+
+             let namePart = '??';
+             let titlePart = '';
+             if (revealed && name) {
+                 const parts = name.split(' ');
+                 namePart = parts[0] || '??';
+                 titlePart = parts.slice(1).join(' ') || '';
+             }
+
+             cardElement.innerHTML = `
+                 <div class="card-inner">
+                     <div class="card-face">
+                         <span class="card-id-face">#${cardId}</span>
+                         <span class="card-name-part">${namePart}</span>
+                         <span class="card-title-part">${titlePart}</span>
+                     </div>
+                     <div class="card-back">
+                         <span>${cardId}</span> <!-- ID on back -->
+                     </div>
+                 </div>
+             `;
+             container.appendChild(cardElement);
+         }
+
     </script>
 </body>
 </html> 
