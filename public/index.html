@@ -27,11 +27,6 @@
                  <!-- Date Assignment Button -->
                  <button id="assign-dates-button" style="margin-top: 15px; width: 100%; background-color: #17a2b8;" disabled>分配簡報日期</button>
              </div>
-              <!-- Date Assignment Display Area -->
-              <div id="date-assignment-container" style="display: none; margin-top: 20px; background-color: #e9f5ff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
-                  <h2>簡報日期分配</h2>
-                  <div id="date-assignment-list"></div>
-              </div>
              <button id="test-button" style="margin-top:10px; padding: 5px 10px; display: none;">模擬配對</button> <!-- 測試按鈕(可隱藏) -->
 
         </div>
@@ -41,6 +36,20 @@
                  <!-- 卡牌將由 JS 動態生成 -->
              </div>
         </div>
+    </div>
+
+    <!-- Date Assignment Display Area MOVED TO HERE -->
+    <div id="date-assignment-container" 
+         style="display: none; 
+                width: 95%; 
+                max-width: 1400px; /* Match main container width */
+                margin: 30px auto; /* Center it below main container */ 
+                background-color: #e9f5ff; 
+                padding: 20px; /* More padding */ 
+                border-radius: 8px; 
+                box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+        <h2>簡報日期分配</h2>
+        <div id="date-assignment-list"></div>
     </div>
 
     <!-- Music Controls -->
@@ -64,7 +73,6 @@
         const cardContainer = document.getElementById('card-container');
         const resultsList = document.getElementById('results-list');
         const assignDatesButton = document.getElementById('assign-dates-button'); // Date button
-        const dateAssignmentContainer = document.getElementById('date-assignment-container'); // Date display area
         const dateAssignmentList = document.getElementById('date-assignment-list'); // Date list UL
         const bgMusic = document.getElementById('background-music'); // Music player
         const playPauseButton = document.getElementById('play-pause-button'); // Music button
@@ -119,7 +127,6 @@
             currentPairings = pairings;
             renderPairingResults(pairings);
             assignDatesButton.disabled = !(pairings && pairings.length > 0); // Enable button if results exist
-            dateAssignmentContainer.style.display = 'none'; // Hide old date assignments
         });
 
         socket.on('pairingError', (message) => { console.error('Pairing error:', message); alert(`配對失敗：${message}`); });
@@ -131,8 +138,6 @@
             renderCards([]); // Re-render empty placeholders
             resultsList.innerHTML = '<li>尚無配對結果</li>';
             assignDatesButton.disabled = true;
-            dateAssignmentContainer.style.display = 'none';
-            dateAssignmentList.innerHTML = '';
             // Stop music on reset maybe?
              if (isPlaying) {
                  bgMusic.pause();
@@ -232,8 +237,9 @@
              }
              const listContainer = document.createElement('div');
              listContainer.style.display = 'grid';
-             listContainer.style.gridTemplateColumns = 'repeat(auto-fit, minmax(220px, 1fr))';
-             listContainer.style.gap = '20px';
+             // Adjust minmax for potentially wider columns if desired
+             listContainer.style.gridTemplateColumns = 'repeat(auto-fit, minmax(230px, 1fr))'; 
+             listContainer.style.gap = '25px'; // Increase gap
              listContainer.style.padding = '10px';
 
              dates.sort();
@@ -266,7 +272,8 @@
                      let membersHtml = '';
                      pairing.members.forEach((member, index) => {
                          const namePart = member.name ? member.name.split(' ')[0] : '??';
-                         membersHtml += `${index > 0 ? ' &<br/>' : ''}<span class="pair-member">${namePart}</span>`;
+                         // Use non-breaking space for visual separation
+                         membersHtml += `${index > 0 ? ' &nbsp;&&nbsp; ' : ''}<span class="pair-member">${namePart}</span>`; 
                      });
                      if (pairing.members.length === 1) membersHtml += ' (輪空)';
                      li.innerHTML = `<strong style="display: inline-block; min-width: 40px;">組 ${pairing.group}:</strong> ${membersHtml}`;
