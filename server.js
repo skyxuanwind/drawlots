@@ -140,6 +140,56 @@ app.get('/reset', (req, res) => {
   res.send('Game reset. All participants and cards reset, clients notified.');
 });
 
+// --- NEW: Simulate All Confirmed Route ---
+app.get('/simulate-all-confirmed', (req, res) => {
+    console.log('Simulate all confirmed command received.');
+    let simulatedCount = 0;
+    // Find all connected mobile users who haven't confirmed yet
+    const unconfirmedMobiles = [];
+    participants.forEach((pInfo, socketId) => {
+        if (pInfo.type === 'mobile' && !pInfo.confirmed) {
+             unconfirmedMobiles.push(pInfo);
+        }
+    });
+
+    // Iterate through visual cards and assign remaining ones to unconfirmed users
+    visualCards.forEach(card => {
+        if (!card.drawn) {
+            // Find an unconfirmed mobile user to assign this card to
+            const userToAssign = unconfirmedMobiles.pop(); // Get one from the end
+            if (userToAssign) {
+                 card.drawn = true;
+                 userToAssign.confirmed = true;
+                 userToAssign.visualCardId = card.id;
+                 simulatedCount++;
+                 console.log(`Simulated confirmation for ${userToAssign.name}, assigned visual card ${card.id}`);
+                 // Optionally, emit events to the specific user? Or just update globally.
+                 // const userSocket = io.sockets.sockets.get(participants.findKey(p => p === userToAssign)); // Need to find socket ID
+                 // if(userSocket) { userSocket.emit('confirmSuccess'); userSocket.emit('cardAssigned', { cardId: card.id }); }
+            } else {
+                // No more unconfirmed users to assign cards to, stop simulation for cards
+                 console.log(`Visual card ${card.id} has no unconfirmed user to be assigned to.`);
+                 // return; // Stop iterating cards if no more users
+            }
+        }
+    });
+
+    // Mark any remaining unconfirmed users as confirmed (even if no card assigned - less likely)
+    unconfirmedMobiles.forEach(pInfo => {
+        if (!pInfo.confirmed) {
+            pInfo.confirmed = true;
+             console.log(`Simulated confirmation for ${pInfo.name} (no visual card assigned).`);
+             // Optionally emit confirmSuccess to them
+        }
+    });
+
+    // Broadcast updated states
+    broadcastToScreens('participantState', getPublicParticipantState());
+    broadcastToScreens('updateCards', getPublicCardState());
+
+    res.send(`Simulation complete. ${simulatedCount} users were marked as confirmed and assigned visual cards.`);
+});
+
 // --- Socket.IO 連線處理 ---
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
