@@ -21,10 +21,17 @@
             </div>
              <div id="controls-placeholder"></div>
              <!-- 配對結果顯示區域 -->
-             <div id="results" style="margin-top: 20px; background-color: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+             <div id="results">
                  <h2>配對結果</h2>
-                 <ul id="results-list"></ul>
+                 <ul id="results-list"><li>尚無配對結果</li></ul>
+                 <!-- Date Assignment Button -->
+                 <button id="assign-dates-button" style="margin-top: 15px; width: 100%; background-color: #17a2b8;" disabled>分配簡報日期</button>
              </div>
+              <!-- Date Assignment Display Area -->
+              <div id="date-assignment-container" style="display: none; margin-top: 20px; background-color: #e9f5ff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+                  <h2>簡報日期分配</h2>
+                  <div id="date-assignment-list"></div>
+              </div>
              <button id="test-button" style="margin-top:10px; padding: 5px 10px; display: none;">模擬配對</button> <!-- 測試按鈕(可隱藏) -->
 
         </div>
@@ -34,6 +41,15 @@
                  <!-- 卡牌將由 JS 動態生成 -->
              </div>
         </div>
+    </div>
+
+    <!-- Music Controls -->
+    <div id="music-controls" style="position: fixed; bottom: 10px; left: 10px; background: rgba(255,255,255,0.8); padding: 8px; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.2); z-index: 100;">
+        <audio id="background-music" loop>
+            <source src="background.mp3" type="audio/mpeg">
+            您的瀏覽器不支援 Audio 標籤。
+        </audio>
+        <button id="play-pause-button" style="padding: 5px 10px; font-size: 0.9em;">播放音樂</button>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
@@ -47,132 +63,106 @@
         const qrCodeImg = document.getElementById('qr-code-img');
         const cardContainer = document.getElementById('card-container');
         const resultsList = document.getElementById('results-list');
-        const testButton = document.getElementById('test-button'); // 測試用
+        const assignDatesButton = document.getElementById('assign-dates-button'); // Date button
+        const dateAssignmentContainer = document.getElementById('date-assignment-container'); // Date display area
+        const dateAssignmentList = document.getElementById('date-assignment-list'); // Date list UL
+        const bgMusic = document.getElementById('background-music'); // Music player
+        const playPauseButton = document.getElementById('play-pause-button'); // Music button
+        const testButton = document.getElementById('test-button');
 
-        let currentCardsState = []; // 儲存卡牌狀態
-        let currentPairings = []; // 儲存配對結果
+        let currentCardsState = [];
+        let currentPairings = [];
+        let isPlaying = false;
+        const TOTAL_CARDS_FRONTEND = 50; // <-- Define card count for frontend rendering
 
-        // --- QR Code --- (保持不變)
-        fetch('/qr')
-            .then(response => response.json())
-            .then(data => {
-                if (data.qrCodeDataUrl) {
-                    qrCodeImg.src = data.qrCodeDataUrl;
-                } else {
-                    console.error('Failed to load QR code');
-                }
-            })
-            .catch(error => console.error('Error fetching QR code:', error));
+        // --- QR Code --- (No change)
+        fetch('/qr').then(response => response.json()).then(data => { if (data.qrCodeDataUrl) { qrCodeImg.src = data.qrCodeDataUrl; } else { console.error('Failed to load QR code'); }}).catch(error => console.error('Error fetching QR code:', error));
 
         // --- Socket.IO Event Handlers ---
-        socket.on('connect', () => {
-            console.log('Connected to server as screen', socket.id);
-            socket.emit('registerScreen'); // Register as screen
-        });
+        socket.on('connect', () => { console.log('Connected'); socket.emit('registerScreen'); });
+        socket.on('disconnect', () => { console.log('Disconnected'); joinedCountSpan.textContent = '--'; confirmedCountSpan.textContent = '--'; totalConnectionsSpan.textContent = '--'; });
+        socket.on('connect_error', (err) => { console.error('Connection error:', err); });
 
-        socket.on('disconnect', () => {
-            console.log('Disconnected from server');
-            joinedCountSpan.textContent = '--';
-            confirmedCountSpan.textContent = '--';
-            totalConnectionsSpan.textContent = '--';
-        });
-
-        socket.on('connect_error', (err) => {
-            console.error('Connection error:', err);
-        });
-
-        // 更新參與者狀態
         socket.on('participantState', (state) => {
-            console.log('Received participant state:', state);
+            console.log('Participant state:', state);
             joinedCountSpan.textContent = state.totalJoined || 0;
             confirmedCountSpan.textContent = state.totalConfirmed || 0;
             totalConnectionsSpan.textContent = state.totalConnections || 0;
         });
 
-        // 更新卡牌視覺狀態 (重要)
         socket.on('updateCards', (cards) => {
-            console.log('Received card state update:', cards);
+            console.log('Card state update:', cards);
             currentCardsState = cards;
             renderCards(currentCardsState);
         });
 
-        // 單獨翻開某張卡並顯示名字 (重要)
         socket.on('revealCard', (data) => {
-            console.log('Received reveal command for card:', data);
+            console.log('Reveal card:', data);
             const { cardId, name } = data;
             const cardElement = cardContainer.querySelector(`.card[data-card-id='${cardId}']`);
             if (cardElement) {
                 const cardData = currentCardsState.find(c => c.id === cardId);
-                if(cardData) cardData.revealed = true; // 更新本地狀態
-
+                if(cardData) cardData.revealed = true;
                 cardElement.classList.add('revealed');
                 const nameElement = cardElement.querySelector('.card-name-part');
                 const titleElement = cardElement.querySelector('.card-title-part');
                 if (nameElement && titleElement) {
-                     // 解析名字和職稱
                     const parts = name ? name.split(' ') : ['未知'];
                     nameElement.textContent = parts[0] || '??';
                     titleElement.textContent = parts.slice(1).join(' ') || '';
                 }
-            } else {
-                 console.warn(`Card element not found for reveal: ${cardId}`);
-            }
+            } else { console.warn(`Card element not found for reveal: ${cardId}`); }
         });
 
-        // 顯示配對結果
         socket.on('showPairingResults', (pairings) => {
-            console.log('Received pairing results:', pairings);
+            console.log('Pairing results:', pairings);
             currentPairings = pairings;
             renderPairingResults(pairings);
+            assignDatesButton.disabled = !(pairings && pairings.length > 0); // Enable button if results exist
+            dateAssignmentContainer.style.display = 'none'; // Hide old date assignments
         });
 
-        // 配對錯誤
-        socket.on('pairingError', (message) => {
-            console.error('Pairing error:', message);
-            alert(`配對失敗：${message}`);
-        });
+        socket.on('pairingError', (message) => { console.error('Pairing error:', message); alert(`配對失敗：${message}`); });
 
-        // 遊戲重設
         socket.on('gameReset', () => {
-            console.log('Game reset received.');
-            currentCardsState = []; // 清空本地卡牌狀態
+            console.log('Game reset');
+            currentCardsState = [];
             currentPairings = [];
-            renderCards([]); // 重新渲染空卡牌狀態 (會觸發初始化)
-            resultsList.innerHTML = ''; // 清空配對結果
-            // Participant counts will be updated via participantState event
+            renderCards([]); // Re-render empty placeholders
+            resultsList.innerHTML = '<li>尚無配對結果</li>';
+            assignDatesButton.disabled = true;
+            dateAssignmentContainer.style.display = 'none';
+            dateAssignmentList.innerHTML = '';
+            // Stop music on reset maybe?
+             if (isPlaying) {
+                 bgMusic.pause();
+                 playPauseButton.textContent = '播放音樂';
+                 isPlaying = false;
+             }
         });
 
         // --- Rendering Functions ---
         function renderCards(cardsData) {
             if (!cardsData || cardsData.length === 0) {
-                 console.log('Initializing empty cards...');
-                 // 如果沒有卡牌數據 (例如重設後)，則重新初始化空的卡牌格子
                  cardsData = [];
-                 for (let i = 1; i <= 51; i++) { // 假設總共 51 張
+                 for (let i = 1; i <= TOTAL_CARDS_FRONTEND; i++) { // Use frontend constant
                      cardsData.push({ id: i, drawn: false, revealed: false });
                  }
-                 currentCardsState = cardsData; // 更新本地狀態為初始狀態
+                 currentCardsState = cardsData;
             }
-
-            cardContainer.innerHTML = ''; // Clear previous cards
+            cardContainer.innerHTML = '';
             cardsData.forEach(card => {
                 const cardElement = document.createElement('div');
                 cardElement.classList.add('card');
                 cardElement.dataset.cardId = card.id;
-
-                // 根據狀態添加 class
                 if (card.drawn) cardElement.classList.add('drawn');
                 if (card.revealed) cardElement.classList.add('revealed');
-
-                // 解析名字 (如果已翻牌且名字存在)
-                let namePart = '??';
-                let titlePart = '';
+                let namePart = '??', titlePart = '';
                 if (card.revealed && card.name) {
                      const parts = card.name.split(' ');
                      namePart = parts[0] || '??';
                      titlePart = parts.slice(1).join(' ') || '';
                 }
-
                 cardElement.innerHTML = `
                     <div class="card-inner">
                         <div class="card-face">
@@ -180,11 +170,8 @@
                              <span class="card-name-part">${namePart}</span>
                              <span class="card-title-part">${titlePart}</span>
                         </div>
-                        <div class="card-back">
-                             <span>${card.id}</span>
-                        </div>
-                    </div>
-                `;
+                        <div class="card-back"><span>${card.id}</span></div>
+                    </div>`;
                 cardContainer.appendChild(cardElement);
             });
         }
@@ -208,23 +195,106 @@
             });
         }
 
-        // --- Initial Render (optional, wait for server) ---
-        // renderCards([]); // Initially render placeholders or wait for first updateCards
+         // --- Date Assignment Logic ---
+         assignDatesButton.addEventListener('click', () => {
+             if (!currentPairings || currentPairings.length === 0) {
+                 alert('目前沒有配對結果可供分配日期！');
+                 return;
+             }
+             console.log('Assigning dates...');
+             // Define presentation dates
+             const dates = ['4/15', '4/22', '4/29', '5/6', '5/13', '5/20']; // Example dates
+             const shuffledPairings = [...currentPairings].sort(() => Math.random() - 0.5);
+             const assignments = {};
+             dates.forEach(date => assignments[date] = []);
+             const numPairings = shuffledPairings.length;
+             const numDates = dates.length;
+             const baseGroupsPerDate = Math.floor(numPairings / numDates);
+             const remainderGroups = numPairings % numDates;
+             let currentIndex = 0;
+             for (let i = 0; i < numDates; i++) {
+                 const date = dates[i];
+                 const groupsForThisDate = baseGroupsPerDate + (i < remainderGroups ? 1 : 0);
+                 const endIndex = currentIndex + groupsForThisDate;
+                 assignments[date] = shuffledPairings.slice(currentIndex, endIndex);
+                 currentIndex = endIndex;
+             }
+             console.log('Date assignments:', assignments);
+             renderDateAssignments(assignments);
+         });
 
-        // --- Test Button Logic (For Development) ---
+         function renderDateAssignments(assignments) {
+             dateAssignmentList.innerHTML = '';
+             const dates = Object.keys(assignments);
+             if (dates.length === 0) {
+                 dateAssignmentContainer.style.display = 'none';
+                 return;
+             }
+             const listContainer = document.createElement('div');
+             listContainer.style.display = 'grid';
+             listContainer.style.gridTemplateColumns = 'repeat(auto-fit, minmax(220px, 1fr))';
+             listContainer.style.gap = '15px';
+             dates.sort();
+             dates.forEach(date => {
+                 const dateSection = document.createElement('div');
+                 const dateTitle = document.createElement('h3');
+                 dateTitle.textContent = date;
+                 dateTitle.style.borderBottom = '1px solid #ccc';
+                 dateTitle.style.paddingBottom = '5px';
+                 dateTitle.style.marginBottom = '10px';
+                 dateSection.appendChild(dateTitle);
+                 const groupList = document.createElement('ul');
+                 groupList.style.listStyle = 'none';
+                 groupList.style.paddingLeft = '0';
+                 assignments[date].forEach(pairing => {
+                     const li = document.createElement('li');
+                     li.style.marginBottom = '6px';
+                     let membersHtml = '';
+                     pairing.members.forEach((member, index) => {
+                         const namePart = member.name ? member.name.split(' ')[0] : '??';
+                         membersHtml += `${index > 0 ? ' & ' : ''}<span class="pair-member">${namePart}</span>`;
+                     });
+                     if (pairing.members.length === 1) membersHtml += ' (輪空)';
+                     li.innerHTML = `組 ${pairing.group}: ${membersHtml}`;
+                     groupList.appendChild(li);
+                 });
+                 dateSection.appendChild(groupList);
+                 listContainer.appendChild(dateSection);
+             });
+             dateAssignmentList.appendChild(listContainer);
+             dateAssignmentContainer.style.display = 'block';
+         }
+
+         // --- Music Controls Logic ---
+         playPauseButton.addEventListener('click', () => {
+             if (isPlaying) {
+                 bgMusic.pause();
+                 playPauseButton.textContent = '播放音樂';
+             } else {
+                 bgMusic.play().then(() => {
+                      playPauseButton.textContent = '暫停音樂';
+                  }).catch(error => {
+                      console.error("無法播放音樂:", error);
+                      alert("無法自動播放音樂，請確保瀏覽器允許或手動開始播放。")
+                  });
+             }
+             isPlaying = !isPlaying;
+         });
+         // Attempt to play music on load (might be blocked by browser)
+         bgMusic.play().then(() => { isPlaying = true; playPauseButton.textContent = '暫停音樂'; }).catch(e => {console.log('Auto-play prevented')});
+
+
+        // --- Test Button Logic ---
         testButton.addEventListener('click', () => {
-            console.log("Simulating pairing results for testing...");
+            console.log("Simulating...");
             const testPairings = [
-                { group: 1, members: [{ id: 'a', name: '測試者A' }, { id: 'b', name: '測試者B' }] },
-                { group: 2, members: [{ id: 'c', name: '測試者C' }, { id: 'd', name: '測試者D 職稱' }] },
-                { group: 3, members: [{ id: 'e', name: '測試者E' }, { id: null, name: '輪空' }] },
+                { group: 1, members: [{ id: 'a', name: '測試A' }, { id: 'b', name: '測試B' }] },
+                { group: 2, members: [{ id: 'c', name: '測試C 職稱' }, { id: 'd', name: '測試D' }] },
+                { group: 3, members: [{ id: 'e', name: '測試E' }, { id: null, name: '輪空' }] },
             ];
-            renderPairingResults(testPairings);
-            // Simulate revealing some cards
-            const testCardReveal1 = { cardId: 1, name: '測試者A' };
-            const testCardReveal2 = { cardId: 5, name: '測試者C' };
-            socket.emit('revealCard', testCardReveal1); // Simulate receiving reveal
-            socket.emit('revealCard', testCardReveal2);
+            socket.emit('showPairingResults', testPairings); // Simulate receiving results
+            socket.emit('revealCard', { cardId: 1, name: '測試A' }); // Simulate reveals
+            socket.emit('revealCard', { cardId: 5, name: '測試C 職稱' });
         });
 
     </script>

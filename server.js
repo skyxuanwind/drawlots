@@ -41,7 +41,7 @@ const io = socketIo(server, {
 const participants = new Map();
 // 視覺卡牌: { id: number, drawn: boolean, revealed: boolean } - 只用於視覺追蹤
 let visualCards = [];
-const TOTAL_VISUAL_CARDS = 51; // 或者您可以設定成需要的數量
+const TOTAL_VISUAL_CARDS = 50; // <-- 改回 50
 let pairingResults = []; // 儲存配對結果
 
 // --- 初始化視覺卡牌 ---
