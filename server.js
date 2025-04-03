@@ -140,57 +140,71 @@ app.get('/reset', (req, res) => {
   res.send('Game reset. All participants and cards reset, clients notified.');
 });
 
-// --- NEW: Simulate All Confirmed Route ---
+// --- NEW: Simulate All Confirmed Route (Revised) ---
 app.get('/simulate-all-confirmed', (req, res) => {
     console.log('Simulate all confirmed command received.');
-    let simulatedCount = 0;
+    let assignedCount = 0;
+    let newlyConfirmedCount = 0;
+
+    // 1. Find all connected mobile users who have joined but not confirmed
     const unconfirmedMobiles = [];
-    // Find all connected mobile users who have joined but not confirmed
     participants.forEach((pInfo, socketId) => {
         if (pInfo.type === 'mobile' && pInfo.joined && !pInfo.confirmed) {
-             // Store both socketId and pInfo for easier event emission later
-             unconfirmedMobiles.push({ id: socketId, info: pInfo }); 
+             unconfirmedMobiles.push({ id: socketId, info: pInfo });
         }
     });
+    console.log(`Found ${unconfirmedMobiles.length} unconfirmed mobile users.`);
 
-    console.log(`Found ${unconfirmedMobiles.length} unconfirmed mobile users to simulate.`); 
-
-    // Iterate through visual cards and assign remaining ones to unconfirmed users
+    // 2. Iterate through ALL visual cards
     visualCards.forEach(card => {
         if (!card.drawn) {
-            const userToAssign = unconfirmedMobiles.pop(); // Get one {id, info} from the end
+            // Mark the card as drawn REGARDLESS of user assignment
+            card.drawn = true; 
+
+            // Try to assign it to an actual unconfirmed user
+            const userToAssign = unconfirmedMobiles.pop(); 
             if (userToAssign) {
-                 card.drawn = true;
-                 userToAssign.info.confirmed = true; // Mark user as confirmed in the participants map
+                 userToAssign.info.confirmed = true;
                  userToAssign.info.visualCardId = card.id;
-                 simulatedCount++;
+                 assignedCount++;
+                 newlyConfirmedCount++;
                  console.log(`Simulated confirmation for ${userToAssign.info.name} (${userToAssign.id}), assigned visual card ${card.id}`);
                  
-                 // --- Emit events to the specific simulated user's socket --- 
+                 // Emit events to the specific simulated user's socket
                  const userSocket = io.sockets.sockets.get(userToAssign.id);
                  if(userSocket) {
                      userSocket.emit('confirmSuccess'); 
                      userSocket.emit('cardAssigned', { cardId: card.id });
-                     console.log(`Emitted confirmSuccess and cardAssigned to simulated user ${userToAssign.info.name}`);
+                     console.log(`Emitted events to simulated user ${userToAssign.info.name}`);
                  } else {
                       console.warn(`Socket not found for simulated user ${userToAssign.info.name} (${userToAssign.id}) during simulation emission.`);
                  }
-                 // -----------------------------------------------------------
-
             } else {
-                 console.log(`No more unconfirmed users for visual card ${card.id}.`);
-                 // Stop iterating cards if no more users
-                 return; 
+                 // No user to assign this card to, but it's marked as drawn anyway.
+                 console.log(`Visual card ${card.id} marked as drawn (no user assigned).`);
             }
         }
     });
 
-    // Broadcast updated states to screens
-    broadcastToScreens('participantState', getPublicParticipantState());
-    broadcastToScreens('updateCards', getPublicCardState());
+    // 3. Mark any remaining unconfirmed users (if cards ran out first) as confirmed
+    unconfirmedMobiles.forEach(user => {
+        if (!user.info.confirmed) {
+             user.info.confirmed = true;
+             newlyConfirmedCount++;
+             console.log(`Marked remaining unconfirmed user ${user.info.name} (${user.id}) as confirmed (no card assigned).`);
+             const userSocket = io.sockets.sockets.get(user.id);
+             if(userSocket) {
+                 userSocket.emit('confirmSuccess'); // Still notify them
+             }
+        }
+    });
 
-    console.log(`Simulation finished. Simulated ${simulatedCount} confirmations.`);
-    res.send(`Simulation complete. ${simulatedCount} users were marked as confirmed and assigned visual cards.`);
+    // 4. Broadcast updated states to screens
+    broadcastToScreens('participantState', getPublicParticipantState());
+    broadcastToScreens('updateCards', getPublicCardState()); // This now reflects ALL cards as drawn
+
+    console.log(`Simulation finished. Assigned ${assignedCount} cards. Confirmed ${newlyConfirmedCount} users.`);
+    res.send(`Simulation complete. All ${TOTAL_VISUAL_CARDS} visual cards marked as drawn. Confirmed ${newlyConfirmedCount} users.`);
 });
 
 // --- Socket.IO 連線處理 ---
