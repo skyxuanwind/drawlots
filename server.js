@@ -1,3 +1,4 @@
+// server.js (Revised Flow: Enter Name -> Confirm -> Pair)
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
@@ -7,22 +8,17 @@ const app = express();
 const server = http.createServer(app);
 
 // --- 取得公開網址 ---
-// Fly.io 會設定 FLY_APP_NAME 環境變數
 const appName = process.env.FLY_APP_NAME;
-const PORT = process.env.PORT || 3000; // 先定義 PORT
-const publicHost = appName ? `${appName}.fly.dev` : 'localhost'; // 正確的公開主機名
-const serverPort = appName ? 443 : PORT; // Fly.io 公開訪問用 443 (HTTPS) 或 80 (HTTP)，本地用 PORT
-const serverProtocol = appName ? 'https' : 'http'; // Fly.io 強制 HTTPS
-const PUBLIC_URL = `${serverProtocol}://${publicHost}`; // 公開基礎 URL
-const MOBILE_URL = `${PUBLIC_URL}/mobile`; // 手機頁面的公開 URL
-
+const PORT = process.env.PORT || 3000;
+const publicHost = appName ? `${appName}.fly.dev` : 'localhost';
+const serverProtocol = appName ? 'https' : 'http';
+const PUBLIC_URL = `${serverProtocol}://${publicHost}`;
+const MOBILE_URL = `${PUBLIC_URL}/mobile`;
 
 // --- 精確設定 CORS ---
 const allowedOrigins = [
-    PUBLIC_URL, // <--- 使用公開 URL
-    // 如果需要本機測試
+    PUBLIC_URL,
     `http://localhost:${PORT}`,
-    // 'http://<您的本機IP>:3000' // 如有需要可取消註解並填入
 ];
 
 const io = socketIo(server, {
@@ -37,63 +33,68 @@ const io = socketIo(server, {
         },
         methods: ["GET", "POST"],
     },
-    transports: ['websocket'] // <--- 保持強制 WebSocket
+    transports: ['websocket'] // 維持強制 WebSocket
 });
 
-// --- 卡牌資料與狀態 ---
-let cards = []; // 存放所有牌的資訊 { id: number, revealed: boolean, holder: string | null, name: string }
-let drawnCards = {}; // 記錄 socket.id -> card.id 的映射
-// 將名字列表直接定義為陣列
-const namesList = [
-    "楊攸仁 髮妝造型顧問", "陳玥月 疤痕紋路修復專家", "何玲君 體態雕塑", "李思賢 保養品業", "吳岳軒 影音行銷",
-    "吳佳羽 活動整合企劃", "施建安 品牌設計", "吳金融 AI策略行銷", "熊若堯 專業人像攝影", "李子萱 中英文主持",
-    "陳邑歆 花藝設計", "李冬梅 財富流教練", "洪千貽 樹化玉", "倪暉雅 彩繪藝術文創工程", "李雅婷 古物精品代銷業",
-    "李侑昌 法式甜點", "賴奕銘 滷味麻辣燙", "李明憲 健康餐盒", "張智堯 咖啡業", "李阡瑅 冷凍水產買賣",
-    "温志文 農業生技銷售", "張禎娟 日本清酒", "段兆陽 健康住宅設計", "吳瑞文 住宅房仲", "朱玲瑤 窗簾業",
-    "林詠儀 油漆工程", "杜國勇 木作裝修", "林才達 餐廳廚房油污清潔", "洪銘駿 殯葬禮儀業", "王杙鋌 海外留學",
-    "李庚育 環控設備業", "石昇弘 商空設計", "劉耀尹 五金工具業", "陳致佐 水電工程", "梁家菖 商用空調",
-    "張立群 進口車代表-賓士", "張泰祥 中古車買賣", "李承書 汽車鍍膜包膜", "林祥禔 Google資訊整合顧問", "王瑞謙 資訊科技顧問專業代表",
-    "王子伊 頭皮.頭療spa顧問", "陳仕良 三高健康管理師", "黃裕峰 抗紅外線涼感眼鏡", "陳家祥 成人情趣保健品", "陳志豪 遠紅外線照射器材",
-    "郭馥瑜 推拿觸療", "林弘偉 自行車業", "黃仲毅 保險與財務規劃顧問", "董帛融 會計師", "歐政儒 律師"
-    // 確認這裡剛好是 51 個
-];
-const TOTAL_CARDS = namesList.length; // 根據名字列表長度決定總牌數
+// --- 參與者資料結構 ---
+// 使用 Map: socket.id -> { name: string, joined: boolean, confirmed: boolean, type: 'screen' | 'mobile' | 'unknown' }
+const participants = new Map();
+let pairingResults = []; // 儲存配對結果供後續日期分配
 
-// --- 連線使用者 ---
-const connectedUsers = new Map(); // socket.id -> { type: 'screen' | 'mobile', hasDrawn: boolean }
-
-
-// --- 初始化卡牌 (修改) ---
-function initializeCards() {
-    cards = [];
-    drawnCards = {};
-    // cardAssignments 不再需要，名字直接存在 card 物件裡
-
-    if (namesList.length === 0) {
-        console.error("錯誤：名字列表是空的，無法初始化卡牌！");
-        return;
+// --- 輔助函數 ---
+function shuffleArray(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
     }
-
-    // 為每個名字創建一張牌
-    for (let i = 0; i < TOTAL_CARDS; i++) {
-        const cardId = i + 1; // ID 從 1 開始
-        const name = namesList[i];
-        cards.push({ id: cardId, revealed: false, holder: null, name: name });
-    }
-
-    // 打亂卡牌順序
-    cards.sort(() => Math.random() - 0.5);
-
-    console.log(`${TOTAL_CARDS} 張卡牌已初始化並分配名字。`);
+    return array;
 }
 
-// 移除舊的 cardNameData，直接呼叫初始化
-initializeCards();
+// 取得公開的參與者資訊 (例如人數)
+function getPublicParticipantState() {
+    const confirmedCount = Array.from(participants.values()).filter(p => p.type === 'mobile' && p.confirmed).length;
+    const joinedCount = Array.from(participants.values()).filter(p => p.type === 'mobile' && p.joined).length; // 只計算已輸入名字的手機端
+    const mobileUsers = Array.from(participants.values()).filter(p => p.type === 'mobile' && p.name).map(p => ({name: p.name, confirmed: p.confirmed}));
+    const totalConnections = participants.size; // 所有連線數
+
+    return {
+        totalJoined: joinedCount, // 已輸入名字的人數
+        totalConfirmed: confirmedCount, // 已確認的人數
+        participantsList: mobileUsers, // 可以選擇是否顯示列表
+        totalConnections: totalConnections // 總連線數 (包含螢幕)
+    };
+}
+
+// 廣播給大螢幕
+function broadcastToScreens(event, data) {
+    io.sockets.sockets.forEach(socket => {
+        const pInfo = participants.get(socket.id);
+        // 確保是大螢幕連線
+        if (pInfo && pInfo.type === 'screen') {
+             socket.emit(event, data);
+        }
+    });
+}
+// 廣播給所有手機
+function broadcastToMobiles(event, data) {
+     io.sockets.sockets.forEach(socket => {
+        const pInfo = participants.get(socket.id);
+        if (pInfo && pInfo.type === 'mobile') {
+             socket.emit(event, data);
+        }
+    });
+}
+
+// 廣播給所有客戶端 (包含螢幕和手機)
+function broadcastToAll(event, data) {
+    io.emit(event, data);
+}
+
 
 // --- 設定靜態檔案目錄 ---
 app.use(express.static('public'));
 
-// --- 路由 (修改) ---
+// --- 路由 ---
 app.get('/', (req, res) => {
   res.sendFile(__dirname + '/public/index.html');
 });
@@ -102,16 +103,15 @@ app.get('/mobile', (req, res) => {
   res.sendFile(__dirname + '/public/mobile.html');
 });
 
-// 新增：提供後台管理頁面
 app.get('/admin', (req, res) => {
   res.sendFile(__dirname + '/public/admin.html');
 });
 
-// 產生 QR code 的路由 (修改)
+// 產生 QR code 的路由 (不變)
 app.get('/qr', async (req, res) => {
     try {
-        console.log(`Generating QR code for: ${MOBILE_URL}`); // <--- 使用公開 URL
-        const qrCodeDataUrl = await qrcode.toDataURL(MOBILE_URL); // <--- 使用公開 URL
+        console.log(`Generating QR code for: ${MOBILE_URL}`);
+        const qrCodeDataUrl = await qrcode.toDataURL(MOBILE_URL);
         res.json({ qrCodeDataUrl });
     } catch (err) {
         console.error('Error generating QR code:', err);
@@ -119,250 +119,256 @@ app.get('/qr', async (req, res) => {
     }
 });
 
-// 後台觸發翻牌的端點
-app.get('/reveal', (req, res) => {
+// 修改：後台觸發 配對 的端點
+app.get('/start-pairing', (req, res) => { // <-- URL 修改
   // 實際應用中應加入安全驗證
-  console.log('Reveal command received from admin.');
-  revealCards();
-  res.send('Reveal command sent to all connected mobile clients.');
+  console.log('Start pairing command received from admin.');
+  startPairing(); // <-- 呼叫新的函數名
+  res.send('Pairing process started. Results sent to clients.');
 });
 
-// 後台觸發重設的端點
+// 後台觸發重設的端點 (不變，但內部會呼叫新的 resetGame)
 app.get('/reset', (req, res) => {
   // 實際應用中應加入安全驗證
   console.log('Reset command received from admin.');
   resetGame();
-  res.send('Game reset. All cards returned, clients notified.');
+  res.send('Game reset. All participants removed, clients notified.');
 });
 
 
-// --- Socket.IO 連線處理 (修改) ---
+// --- Socket.IO 連線處理 (重寫) ---
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
 
-  const connectionType = socket.handshake.query.type || 'unknown';
-  if (connectionType === 'screen') {
-      console.log(`Screen connected: ${socket.id}`);
-      connectedUsers.set(socket.id, { type: 'screen', hasDrawn: false });
-      socket.emit('updateCards', getPublicCardState());
-      // socket.emit('qrCodeUrl', MOBILE_URL); // <--- 移除這個事件
+  // 暫時先不區分類型，等收到 joinGame 或 registerScreen 再確定
+  participants.set(socket.id, { name: null, joined: false, confirmed: false, type: 'unknown' });
+  console.log('Current participants count:', participants.size);
+  // 不需要立即廣播人數，等確定類型後再廣播
 
-  } else if (connectionType === 'mobile') {
-      console.log(`Mobile connected: ${socket.id}`);
-      connectedUsers.set(socket.id, { type: 'mobile', hasDrawn: false });
-      // 檢查是否已經抽過牌 (例如頁面刷新)
-      if (drawnCards[socket.id]) {
-          const cardId = drawnCards[socket.id];
-          const card = cards.find(c => c.id === cardId);
-          if (card) {
-              socket.emit('cardDrawn', { id: card.id, revealed: card.revealed, name: card.name });
-          }
-      } else {
-          socket.emit('welcome'); // 告訴手機端已連線，可以顯示抽牌按鈕
+
+  // 監聽手機端加入遊戲的事件
+  socket.on('joinGame', (name) => {
+      // 檢查是否已加入或確認
+      const existingPInfo = participants.get(socket.id);
+      if (existingPInfo && existingPInfo.joined) {
+          console.warn(`User ${socket.id} (${existingPInfo.name}) tried to join again.`);
+          socket.emit('joinError', '您已經加入過了！');
+          return;
       }
-  } else {
-       console.log(`Unknown connection type from ${socket.id}. Disconnecting.`);
-       socket.disconnect();
-       return;
-  }
 
-  console.log('Connected users:', connectedUsers.size);
+      if (!name || typeof name !== 'string' || name.trim() === '') {
+          socket.emit('joinError', '請輸入有效的名字！');
+          // 如果加入失敗，保持 'unknown' 狀態或移除？考慮移除以防混淆
+          // participants.delete(socket.id);
+          return;
+      }
+      const trimmedName = name.trim();
+      console.log(`User ${socket.id} attempting to join as ${trimmedName}`);
 
+      // // 檢查名字是否已被使用 (可選)
+      // let nameExists = false;
+      // for (let p of participants.values()) {
+      //     if (p.type === 'mobile' && p.name === trimmedName) {
+      //         nameExists = true;
+      //         break;
+      //     }
+      // }
+      // if (nameExists) {
+      //      socket.emit('joinError', `名字 "${trimmedName}" 已經有人使用了！`);
+      //      return;
+      // }
 
-  // --- 監聽事件 ---
-
-  // 手機請求抽牌
-  socket.on('drawCard', () => {
-    const userInfo = connectedUsers.get(socket.id);
-    if (!userInfo || userInfo.type !== 'mobile') {
-        socket.emit('errorMsg', 'Only mobile clients can draw cards.');
-        return;
-    }
-    if (userInfo.hasDrawn) {
-        socket.emit('errorMsg', 'You have already drawn a card.');
-        return;
-    }
-
-    const availableCard = cards.find(card => !card.holder);
-    if (availableCard) {
-        availableCard.holder = socket.id; // 標記牌被占用
-        drawnCards[socket.id] = availableCard.id; // 記錄誰抽了哪張牌
-        userInfo.hasDrawn = true; // 標記此使用者已抽牌
-
-        console.log(`Card ${availableCard.id} drawn by ${socket.id}`);
-
-        // 發送牌的資訊給抽牌者 (不包含名字，revealed 為 false)
-        socket.emit('cardDrawn', { id: availableCard.id, revealed: false, name: null });
-
-        // 更新所有大螢幕的狀態
-        broadcastToScreens('updateCards', getPublicCardState());
-        // 通知所有客戶端剩餘牌數 (可選)
-        broadcastToAll('cardsRemaining', getRemainingCardCount());
-
-    } else {
-        console.log('No cards left to draw.');
-        socket.emit('errorMsg', 'Sorry, no cards left!');
-    }
+      // 記錄參與者資訊，並標記為 mobile
+      participants.set(socket.id, { name: trimmedName, joined: true, confirmed: false, type: 'mobile' });
+      console.log(`Participant ${trimmedName} (${socket.id}) joined.`);
+      socket.emit('joinSuccess', { name: trimmedName }); // 告知加入成功
+      broadcastToScreens('participantState', getPublicParticipantState()); // 更新大螢幕狀態
   });
+
+  // 監聽手機端確認參與配對的事件
+  socket.on('confirmParticipation', () => {
+      const pInfo = participants.get(socket.id);
+      // 必須是已加入的手機端才能確認
+      if (!pInfo || pInfo.type !== 'mobile' || !pInfo.joined) {
+          console.warn(`Confirm attempt from invalid user: ${socket.id}`, pInfo);
+          socket.emit('confirmError', '您需要先加入才能確認！');
+          return;
+      }
+      if (pInfo.confirmed) {
+           socket.emit('alreadyConfirmed', '您已經確認過了。'); // 使用特定事件
+           return; // 避免重複確認
+      }
+
+      pInfo.confirmed = true;
+      console.log(`Participant ${pInfo.name} (${socket.id}) confirmed participation.`);
+      socket.emit('confirmSuccess'); // 告知確認成功
+      broadcastToScreens('participantState', getPublicParticipantState()); // 更新大螢幕狀態 (已確認人數)
+  });
+
+  // 監聽大螢幕註冊事件
+  socket.on('registerScreen', () => {
+        const pInfo = participants.get(socket.id);
+        // 只有 'unknown' 狀態的連線可以註冊為螢幕
+        if (pInfo && pInfo.type === 'unknown') {
+            pInfo.type = 'screen';
+            console.log(`Screen registered: ${socket.id}`);
+            // 發送初始狀態給這個螢幕
+            socket.emit('participantState', getPublicParticipantState());
+            if (pairingResults.length > 0) { // 如果已有結果，發送給新連線的螢幕
+                socket.emit('showPairingResults', pairingResults);
+            }
+        } else {
+             console.warn(`Attempt to register non-unknown connection as screen: ${socket.id}`, pInfo);
+        }
+  });
+
 
   // 處理斷線
-  socket.on('disconnect', () => {
-    console.log(`User disconnected: ${socket.id}`);
-    const userInfo = connectedUsers.get(socket.id);
-
-    // 如果是已抽牌的手機斷線，回收卡牌 (策略可調整)
-    if (userInfo && userInfo.type === 'mobile' && userInfo.hasDrawn) {
-        const drawnCardId = drawnCards[socket.id];
-        if (drawnCardId) {
-            const card = cards.find(c => c.id === drawnCardId);
-            if (card && !card.revealed) { // 只有未翻牌時才回收
-                console.log(`Recycling card ${drawnCardId} from disconnected user ${socket.id}`);
-                card.holder = null; // 取消佔用
-                delete drawnCards[socket.id];
-                // 更新大螢幕
-                broadcastToScreens('updateCards', getPublicCardState());
-                // 更新剩餘牌數
-                broadcastToAll('cardsRemaining', getRemainingCardCount());
-            } else if (card && card.revealed) {
-                console.log(`User ${socket.id} disconnected after card ${drawnCardId} was revealed. Card not recycled.`);
-                 // 這裡可以選擇是否移除已翻牌的牌的佔用者標記，取決於需求
-                // card.holder = null;
-            }
+  socket.on('disconnect', (reason) => {
+    const pInfo = participants.get(socket.id);
+    if (pInfo) {
+        if (pInfo.type === 'mobile' && pInfo.name) {
+            console.log(`Participant ${pInfo.name} (${socket.id}) disconnected. Reason: ${reason}`);
+            // 如果需要，可以在這裡加入回收邏輯 (如果尚未配對且已確認？)
+            // 但目前邏輯是配對後才重要，斷線就斷線了
+        } else if (pInfo.type === 'screen') {
+            console.log(`Screen ${socket.id} disconnected. Reason: ${reason}`);
+        } else {
+             console.log(`User ${socket.id} (type: unknown) disconnected. Reason: ${reason}`);
         }
+        participants.delete(socket.id); // 從 Map 中移除
+        console.log('Current participants count:', participants.size);
+        broadcastToScreens('participantState', getPublicParticipantState()); // 更新大螢幕狀態
+    } else {
+        console.log(`Disconnected user not found in participants map: ${socket.id}. Reason: ${reason}`);
     }
-
-    connectedUsers.delete(socket.id);
-    console.log('Connected users:', connectedUsers.size);
-    // 可以廣播目前連線人數給大螢幕
-    broadcastToScreens('userCount', connectedUsers.size);
   });
+
+    // 增加錯誤處理
+    socket.on('error', (err) => {
+        console.error(`Socket error for ${socket.id}:`, err);
+    });
+
 });
 
-// --- 輔助函數 ---
 
-// 新增：Fisher-Yates (Knuth) 隨機排序演算法
-function shuffleArray(array) {
-    for (let i = array.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [array[i], array[j]] = [array[j], array[i]]; // ES6 交換語法
+// --- 核心遊戲邏輯函數 (重寫/改名) ---
+
+// 開始配對
+function startPairing() {
+    // 1. 收集所有已確認參與的手機端玩家
+    const confirmedParticipants = [];
+    participants.forEach((pInfo, socketId) => {
+        if (pInfo.type === 'mobile' && pInfo.confirmed) {
+            confirmedParticipants.push({ id: socketId, name: pInfo.name });
+        }
+    });
+
+    if (confirmedParticipants.length < 2) {
+        console.warn('Not enough confirmed participants to start pairing.');
+        // 可以考慮廣播一個訊息給管理員或大螢幕
+        broadcastToScreens('pairingError', '確認人數不足 (至少需要2人)，無法開始配對！');
+        return;
     }
-    return array;
-}
 
-// 取得公開的卡牌狀態 (隱藏 holder 和 name)
-function getPublicCardState() {
-    return cards.map(card => ({
-        id: card.id,
-        drawn: !!card.holder // 只顯示是否被抽走
-    }));
-}
+    console.log(`Starting pairing for ${confirmedParticipants.length} participants...`);
 
-// 取得剩餘卡牌數量
-function getRemainingCardCount() {
-    return cards.filter(card => !card.holder).length;
-}
-
-// 向所有客戶端廣播
-function broadcastToAll(event, data) {
-    io.emit(event, data);
-    // console.log(`Broadcasting to all: ${event}`, data);
-}
-
-// 向所有大螢幕廣播
-function broadcastToScreens(event, data) {
-    connectedUsers.forEach((userInfo, socketId) => {
-        if (userInfo.type === 'screen') {
-            io.to(socketId).emit(event, data);
-        }
-    });
-    // console.log(`Broadcasting to screens: ${event}`, data);
-}
-
-// 向所有手機廣播
-function broadcastToMobiles(event, data) {
-     connectedUsers.forEach((userInfo, socketId) => {
-        if (userInfo.type === 'mobile') {
-            io.to(socketId).emit(event, data);
-        }
-    });
-    // console.log(`Broadcasting to mobiles: ${event}`, data);
-}
-
-
-// --- 核心遊戲邏輯函數 ---
-
-// 翻牌 (修改以實現配對)
-function revealCards() {
-    let revealedCount = 0;
-    const drawnCardsInfo = []; // 收集所有被抽走的牌
-
-    // 1. 翻牌並收集被抽走的牌
-    cards.forEach(card => {
-        if (card.holder) { // 只要是被抽走的牌都要處理
-            if (!card.revealed) {
-                // 翻牌邏輯 (通知手機)
-                card.revealed = true;
-                const holderSocketId = card.holder;
-                const mobileClient = io.sockets.sockets.get(holderSocketId);
-                if (mobileClient) {
-                    mobileClient.emit('revealCard', { id: card.id, revealed: true, name: card.name });
-                    revealedCount++;
-                } else {
-                    console.warn(`Cannot find socket for holder ${holderSocketId} of card ${card.id} during reveal.`);
-                }
-            }
-            // 將被抽走的牌（無論是否剛翻開）加入列表以供配對
-            drawnCardsInfo.push({ id: card.id, name: card.name });
-        }
-    });
-    console.log(`Revealed ${revealedCount} new cards. Total drawn cards for pairing: ${drawnCardsInfo.length}`);
-
-    // 2. 隨機排序被抽走的牌
-    const shuffledDrawnCards = shuffleArray([...drawnCardsInfo]); // 使用副本進行排序
+    // 2. 隨機排序
+    const shuffledParticipants = shuffleArray([...confirmedParticipants]);
 
     // 3. 進行兩兩配對
-    const pairings = [];
+    pairingResults = []; // 清空舊結果
     let groupNumber = 1;
-    for (let i = 0; i < shuffledDrawnCards.length; i += 2) {
+    for (let i = 0; i < shuffledParticipants.length; i += 2) {
         const pair = [];
-        pair.push(shuffledDrawnCards[i]); // 第一個人
-        if (i + 1 < shuffledDrawnCards.length) {
-            pair.push(shuffledDrawnCards[i + 1]); // 第二個人 (如果存在)
+        const member1 = shuffledParticipants[i];
+        pair.push({ id: member1.id, name: member1.name }); // 包含 id 和 name
+
+        if (i + 1 < shuffledParticipants.length) {
+            const member2 = shuffledParticipants[i + 1];
+            pair.push({ id: member2.id, name: member2.name });
+        } else {
+             // 如果人數是奇數，最後一人輪空 (可以在配對結果中標註)
+             pair.push({ id: null, name: '輪空' }); // 標示輪空
+             console.log(`Participant ${member1.name} (${member1.id}) is unpaired this round.`);
         }
-        pairings.push({ group: groupNumber++, members: pair });
+        pairingResults.push({ group: groupNumber++, members: pair });
     }
 
-    console.log('Generated pairings:', pairings);
+    console.log('Generated pairings:', JSON.stringify(pairingResults, null, 2)); // 打印更易讀的結果
 
-    // 4. 向所有大螢幕廣播配對結果
-    broadcastToScreens('showPairingResults', pairings); // 使用新的事件名稱
+    // 4. 向所有大螢幕廣播完整配對結果
+    broadcastToScreens('showPairingResults', pairingResults);
+
+    // 5. 分別通知每個手機客戶端他們的配對結果
+    pairingResults.forEach(pair => {
+        const member1 = pair.members[0];
+        const member2 = pair.members.length > 1 ? pair.members[1] : null; // 第二個成員可能是輪空標記
+
+        // 通知成員1
+        if (member1 && member1.id) { // 確保成員1是真實參與者
+            const socket1 = io.sockets.sockets.get(member1.id);
+            if (socket1) {
+                 // 如果 member2 存在且有 id，則他是夥伴；否則輪空
+                const partner = (member2 && member2.id) ? { name: member2.name } : null;
+                socket1.emit('yourPairing', { partner: partner, group: pair.group });
+            } else {
+                 console.warn(`Socket not found for participant ${member1.name} (${member1.id})`);
+            }
+        }
+
+        // 通知成員2 (如果存在且不是輪空標記)
+        if (member2 && member2.id) {
+            const socket2 = io.sockets.sockets.get(member2.id);
+            if (socket2) {
+                 // 成員2的夥伴永遠是成員1
+                const partner = member1 ? { name: member1.name } : null; // 理論上 member1 總會存在
+                 socket2.emit('yourPairing', { partner: partner, group: pair.group });
+            } else {
+                console.warn(`Socket not found for participant ${member2.name} (${member2.id})`);
+            }
+        }
+    });
+    console.log('Sent individual pairing results to mobile clients.');
+    broadcastToScreens('pairingComplete'); // 告知大螢幕配對流程結束
 }
 
-// 重設遊戲 (修改)
+// 重設遊戲
 function resetGame() {
     console.log('Resetting game state...');
-    initializeCards();
+    participants.clear(); // 清空所有參與者
+    pairingResults = []; // 清空配對結果
 
-    broadcastToAll('gameReset');
+    // 通知所有客戶端遊戲已重設
+    // 手機端收到 reset 會回到初始輸入名字狀態
+    // 大螢幕收到 reset 會清除參與者和結果顯示
+    broadcastToAll('gameReset'); // 使用 broadcastToAll 確保所有人都收到
 
-    // 更新大螢幕狀態
-    broadcastToScreens('updateCards', getPublicCardState());
-    broadcastToScreens('userCount', connectedUsers.size);
-    broadcastToScreens('showPairingResults', []); // 發送空配對結果以清除顯示
+    // 重設後立即廣播空的狀態給大螢幕 (因為 participants Map 已清空)
+    broadcastToScreens('participantState', getPublicParticipantState());
+    broadcastToScreens('showPairingResults', []);
 
-    // 通知手機端返回初始狀態
-    broadcastToMobiles('welcome');
+    console.log('Game reset complete.');
 }
 
 
-// --- 啟動伺服器 (修改) ---
-server.listen(PORT, '0.0.0.0', () => { // <-- 監聽在 0.0.0.0
-  // 監聽在 0.0.0.0 上，以便 Fly.io 可以正確轉發
-  console.log(`Server internal listening on port ${PORT}`); // 顯示內部監聽端口
-  console.log(`App publicly available at: ${PUBLIC_URL}`); // 顯示公開網址
-  console.log(`Admin interface: ${PUBLIC_URL}/admin`); // 顯示公開後台網址
-  console.log(`Mobile page: ${MOBILE_URL}`); // 顯示公開手機網址
-  // 初始廣播狀態
-  broadcastToScreens('updateCards', getPublicCardState());
-  broadcastToScreens('userCount', connectedUsers.size);
+// --- 啟動伺服器 ---
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server internal listening on port ${PORT}`);
+  console.log(`App publicly available at: ${PUBLIC_URL}`);
+  console.log(`Admin interface: ${PUBLIC_URL}/admin`);
+  console.log(`Mobile page: ${MOBILE_URL}`);
+});
+
+// 增加全域錯誤處理，捕捉未處理的 Promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // 這裡可以考慮是否需要優雅地關閉伺服器或其他處理
+});
+
+// 捕捉未處理的同步錯誤
+process.on('uncaughtException', (err, origin) => {
+  console.error(`Caught exception: ${err}\n` + `Exception origin: ${origin}`);
+  // 考慮記錄錯誤後退出進程，讓 Fly.io 重啟
+  // process.exit(1);
 }); 
