@@ -36,7 +36,7 @@
          button:active {
              transform: scale(0.98);
          }
-        #reveal-button {
+        #pairing-button {
             background-color: #e67e22; /* 橘色 */
         }
         #reset-button {
@@ -55,41 +55,41 @@
     <h1>抽獎系統 - 後台控制</h1>
 
     <div class="controls">
-        <button id="reveal-button">統一開牌</button>
+        <button id="pairing-button">開始配對</button>
         <button id="reset-button">重設遊戲</button>
     </div>
 
     <div id="status"></div>
 
     <script>
-        const revealButton = document.getElementById('reveal-button');
+        const pairingButton = document.getElementById('pairing-button');
         const resetButton = document.getElementById('reset-button');
         const statusDiv = document.getElementById('status');
 
-        revealButton.addEventListener('click', () => {
-            statusDiv.textContent = '正在發送開牌指令...';
-            fetch('/reveal') // 向後端 /reveal 端點發送請求
+        pairingButton.addEventListener('click', () => {
+            statusDiv.textContent = '正在發送開始配對指令...';
+            fetch('/start-pairing')
                 .then(response => response.text())
                 .then(message => {
-                    console.log('Reveal command response:', message);
-                    statusDiv.textContent = `開牌指令已發送： ${message}`;
-                     setTimeout(() => statusDiv.textContent = '', 3000); // 3秒後清除訊息
+                    console.log('Start pairing command response:', message);
+                    statusDiv.textContent = `配對指令已發送： ${message}`;
+                     setTimeout(() => statusDiv.textContent = '', 3000);
                 })
                 .catch(error => {
-                    console.error('Error sending reveal command:', error);
-                    statusDiv.textContent = `發送開牌指令失敗: ${error}`;
+                    console.error('Error sending start pairing command:', error);
+                    statusDiv.textContent = `發送配對指令失敗: ${error}`;
                 });
         });
 
         resetButton.addEventListener('click', () => {
-            if (confirm('確定要重設遊戲嗎？所有已抽的牌將被回收，使用者需要重新抽牌。')) {
+            if (confirm('確定要重設遊戲嗎？所有參與者需要重新加入並確認。')) {
                 statusDiv.textContent = '正在發送重設指令...';
-                fetch('/reset') // 向後端 /reset 端點發送請求
+                fetch('/reset')
                     .then(response => response.text())
                     .then(message => {
                         console.log('Reset command response:', message);
                         statusDiv.textContent = `重設指令已發送： ${message}`;
-                        setTimeout(() => statusDiv.textContent = '', 3000); // 3秒後清除訊息
+                        setTimeout(() => statusDiv.textContent = '', 3000);
                     })
                     .catch(error => {
                         console.error('Error sending reset command:', error);
