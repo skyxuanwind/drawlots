@@ -1,0 +1,303 @@
+/* General Styles */
+body {
+    font-family: sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background-color: #f0f2f5;
+    margin: 0;
+    padding: 20px;
+    min-height: 100vh;
+    box-sizing: border-box;
+}
+
+h1 {
+    color: #333;
+    margin-bottom: 30px;
+}
+
+/* Layout Containers (for index.html) */
+.main-container {
+    display: flex;
+    width: 95%;
+    max-width: 1400px;
+    gap: 20px;
+}
+
+.left-panel {
+    width: 30%;
+    min-width: 250px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.right-panel {
+    flex-grow: 1;
+}
+
+#info, #qr-code, #results {
+    background-color: #fff;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+#info p, #qr-code p {
+    margin: 5px 0;
+}
+
+#qr-code img {
+    max-width: 180px;
+    height: auto;
+    display: block;
+    margin: 10px auto;
+}
+
+#results h2 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    color: #007bff;
+    text-align: center;
+}
+
+#results-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+#results-list li {
+    margin-bottom: 8px;
+    font-size: 1.1em;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 5px;
+}
+#results-list li .pair-member {
+    font-weight: bold;
+    color: #333;
+}
+
+/* Card Container (for index.html) */
+#card-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); /* Responsive columns */
+    gap: 15px;
+    padding: 15px;
+    background-color: #e9ecef; /* Light grey background */
+    border-radius: 8px;
+    min-height: 400px; /* Ensure container has some height */
+}
+
+/* --- Card Styles (Shared by index.html and mobile.html) --- */
+.card {
+    aspect-ratio: 2 / 3;
+    perspective: 1000px;
+    background-color: transparent; /* Container is transparent */
+    cursor: default;
+    position: relative; /* Needed for absolute positioning of inner */
+    min-height: 150px; /* Minimum height for grid items */
+}
+
+.card-inner {
+    position: relative; /* Changed from absolute to relative to fit card */
+    width: 100%;
+    height: 100%;
+    transform-style: preserve-3d;
+    transition: transform 0.8s ease;
+}
+
+.card-face, .card-back {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    backface-visibility: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+.card-back {
+    background-color: #4a90e2; /* Default back color */
+    background-image: url('card-back-logo.jpg'); /* Logo background */
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    color: white; /* Hide text if needed */
+    /* Ensure text/ID on back is visible if desired */
+    font-size: 1.5em; 
+    font-weight: bold; 
+}
+.card-back span { /* Keep ID visible on back */
+     /* Style as needed */
+}
+
+.card-face {
+    background-color: #fff;
+    color: #333;
+    transform: rotateY(180deg);
+    font-size: 0.9em; /* Adjust base font size for face */
+    line-height: 1.3;
+    text-align: center;
+    padding: 10px;
+    border: 1px solid #ccc;
+}
+
+.card-id-face {
+    font-size: 0.7em;
+    color: #999;
+    position: absolute;
+    top: 5px;
+    right: 8px;
+}
+
+.card-name-part {
+    font-weight: bold;
+    font-size: 1.2em; /* Relative to face font size */
+    display: block;
+    margin-bottom: 4px;
+}
+
+.card-title-part {
+     font-size: 0.9em; /* Relative to face font size */
+     color: #555;
+     display: block;
+}
+
+/* Card States */
+.card.drawn .card-inner { /* Apply effect to inner for perspective */
+    /* Style for drawn cards on the main screen - e.g., greyed out */
+     opacity: 0.3;
+     /* background-color: #bbb; /* Or just change opacity */
+     /* transform: scale(0.95); /* Slight shrink */
+     /* Or keep visible with a drawn marker if reveal happens later */
+}
+
+.card.revealed .card-inner {
+    transform: rotateY(180deg);
+}
+
+/* Ensure drawn cards stay in place but look different before reveal */
+.card.drawn:not(.revealed) .card-inner {
+    /* Keep back visible but indicate drawn */
+    opacity: 0.5; /* Example: slightly faded */
+    cursor: not-allowed;
+}
+
+
+/* Mobile Specific Adjustments (can be moved to mobile.html style block if preferred) */
+#mobile-card-display .card {
+     max-width: 200px; /* Adjust size for mobile */
+     margin: 20px auto; /* Center card */
+}
+
+#status {
+    font-size: 1.2em;
+    margin-bottom: 20px;
+    color: #333;
+    font-weight: 500;
+}
+#join-section, #confirm-section, #waiting-section, #pairing-info {
+    background-color: #fff;
+    padding: 25px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    margin-top: 20px;
+    width: 90%;
+    max-width: 400px;
+    box-sizing: border-box;
+}
+input[type="text"] {
+    padding: 12px;
+    font-size: 1em;
+    margin-right: 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    width: calc(70% - 12px); /* Adjust width considering button */
+    box-sizing: border-box;
+}
+button {
+    padding: 12px 20px;
+    font-size: 1em;
+    cursor: pointer;
+    border: none;
+    border-radius: 4px;
+    transition: background-color 0.3s ease, transform 0.1s ease;
+    color: white;
+    font-weight: bold;
+}
+button:active {
+     transform: scale(0.98);
+}
+#join-button {
+    background-color: #007bff; /* Blue */
+    width: 28%; /* Adjust width */
+}
+#join-button:hover {
+    background-color: #0056b3;
+}
+#confirm-button {
+    background-color: #28a745; /* Green */
+    font-size: 1.2em; /* Make confirm button slightly larger */
+    width: 100%; /* Full width */
+    margin-top: 10px;
+}
+#confirm-button:hover {
+    background-color: #218838;
+}
+button:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+#join-error, #confirm-error {
+    color: red;
+    margin-top: 15px;
+    font-weight: bold;
+    min-height: 1.2em; /* Reserve space for error message */
+}
+#display-name {
+    color: #007bff;
+    font-weight: bold;
+}
+#waiting-section p {
+     color: #555;
+     font-style: italic;
+}
+#pairing-info {
+     font-size: 1.3em;
+     font-weight: bold;
+     color: #2c3e50;
+     padding: 20px;
+     background-color: #e9f7fd; /* Lighter blue background */
+     border: 1px solid #bce0ee;
+     line-height: 1.6;
+}
+#pairing-info span {
+     color: #e67e22; /* Orange for partner name */
+     font-weight: bolder;
+}
+/* Card Placeholder specific style */
+.card-placeholder {
+     aspect-ratio: 2 / 3;
+     background-color: #ddd;
+     border: 2px dashed #aaa;
+     color: #888;
+     display: flex;
+     justify-content: center;
+     align-items: center;
+     font-size: 1em;
+     border-radius: 8px;
+     text-align: center;
+     padding: 10px;
+     box-sizing: border-box;
+     min-height: 150px; /* Match card min-height */
+}
+
+#card-display-waiting .card {
+     margin: 15px auto; /* Center card in waiting area */
+} 
