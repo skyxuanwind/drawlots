@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>抽獎系統 - 大螢幕</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 20px;
+        }
+        #card-container {
+            display: grid;
+            /* 自動調整欄位數，最小 100px，最大 1fr */
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 15px;
+            width: 90%;
+            max-width: 1200px;
+            margin-bottom: 30px;
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .card {
+            aspect-ratio: 2 / 3;
+            /* background-image: radial-gradient(circle at top left, #4a90e2, #1e3a8a); /* 移除漸層 */
+            background-image: url('card-back-logo.jpg'); /* 使用圖片 */
+            background-size: cover; /* 確保圖片覆蓋整個牌背 */
+            background-position: center; /* 圖片居中 */
+            background-repeat: no-repeat; /* 不重複圖片 */
+            color: white; /* 可能不需要顯示文字了 */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            /* font-size: 1.5em; /* 隱藏或移除牌面數字 */
+            /* font-weight: bold; */
+            border-radius: 8px; /* 調整圓角以匹配圖片 */
+            cursor: default;
+            transition: opacity 0.5s ease-in-out, transform 0.5s ease, background-image 0.3s ease;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3); /* 稍微調整陰影 */
+            /* border: 1px solid rgba(255, 255, 255, 0.3); /* 移除或調整邊框 */
+            overflow: hidden; /* 確保圖片不超出邊界 */
+            text-indent: -9999px; /* 隱藏原本的數字文字 */
+        }
+        .card.drawn {
+            opacity: 0; /* 完全透明 */
+            transform: scale(0.5); /* 縮小 */
+            /* pointer-events: none; /* 保持不可交互 */
+        }
+
+        #qr-code-container {
+            text-align: center;
+            margin-top: 20px;
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+         #qr-code-container img {
+            max-width: 200px;
+            height: auto;
+            display: block;
+            margin: 10px auto;
+        }
+        #info {
+            margin-top: 15px;
+            font-size: 1.1em;
+            color: #555;
+        }
+         #status {
+             margin-top: 20px;
+             font-size: 1.2em;
+             color: #333;
+         }
+        #results-container {
+            width: 90%;
+            max-width: 1200px;
+            margin-top: 30px;
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            display: none; /* 由 JS 控制顯示 */
+        }
+        #results-container h2 {
+            text-align: center;
+            margin-bottom: 15px;
+            color: #333;
+        }
+        #results-list {
+            list-style: none;
+            padding: 0;
+            column-count: 2; /* 分成兩欄顯示 */
+            column-gap: 20px;
+        }
+        #results-list li {
+            margin-bottom: 10px;
+            font-size: 1.1em;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+         #results-list li .title-part {
+             font-size: 0.9em;
+             color: #666;
+         }
+         #results-list li .member-name { /* 可以給名字加粗或其他樣式 */
+             font-weight: 600;
+         }
+        #date-assignment-container {
+            width: 90%;
+            max-width: 1200px;
+            margin-top: 30px;
+            padding: 20px;
+            background-color: #e9f5ff; /* 淡藍色背景 */
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+         #date-assignment-container h2 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #1a73e8; /* 藍色標題 */
+        }
+        /* 日期分配列表樣式已在 JS 中使用 Grid 佈局處理 */
+        /* ... */
+    </style>
+</head>
+<body>
+    <h1>富揚白金名人堂分會 簡報組隊抽抽樂</h1>
+    <div id="status">連線中...</div>
+    <div id="card-container">
+        <!-- 卡牌將由 JavaScript 動態生成 -->
+    </div>
+    <div id="qr-code-container">
+        <h2>掃描 QR Code 加入抽獎</h2>
+        <div id="qr-code">正在載入 QR Code...</div>
+        <p id="qr-link"></p>
+    </div>
+    <div id="info">
+        <p>剩餘牌數: <span id="remaining-cards">--</span></p>
+        <p>已連線人數: <span id="user-count">--</span></p>
+    </div>
+
+    <!-- 新增：結果顯示區域 -->
+    <div id="results-container">
+        <h2>抽獎結果</h2>
+        <ul id="results-list">
+            <!-- 結果將由 JavaScript 動態生成 -->
+        </ul>
+    </div>
+
+    <!-- 新增/修改：測試按鈕 -->
+    <div id="test-controls" style="margin-top: 20px; display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 15px;">
+         <button id="test-reveal-button">測試結果顯示 (模擬)</button>
+         <button id="test-all-drawn-button">模擬全部抽完 & 配對</button>
+         <button id="assign-dates-button" disabled>分配簡報日期</button> <!-- 新增按鈕，預設禁用 -->
+    </div>
+
+    <!-- 新增：日期分配顯示區域 -->
+    <div id="date-assignment-container" style="display: none;">
+        <h2>簡報日期分配</h2>
+        <div id="date-assignment-list">
+            <!-- 日期分配結果將由 JavaScript 動態生成 -->
+        </div>
+    </div>
+
+    <div id="music-controls" style="position: fixed; bottom: 10px; left: 10px; background: rgba(255,255,255,0.8); padding: 5px; border-radius: 5px;">
+        <audio id="background-music" loop>
+            <!-- 重要：您需要提供一個音樂檔放在 public 資料夾下，並在此處填寫正確的檔名 -->
+            <source src="background.mp3" type="audio/mpeg">
+            您的瀏覽器不支援 Audio 標籤。
+        </audio>
+        <button id="play-pause-button">播放音樂</button>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        // 修改：強制使用 WebSocket
+        const socket = io({
+            query: { type: 'screen' },
+            transports: ['websocket'] // <-- 強制只用 WebSocket
+        });
+
+        const cardContainer = document.getElementById('card-container');
+        const qrCodeDiv = document.getElementById('qr-code');
+        const qrLinkElement = document.getElementById('qr-link');
+        const remainingCardsSpan = document.getElementById('remaining-cards');
+        const userCountSpan = document.getElementById('user-count');
+        const statusDiv = document.getElementById('status');
+        const resultsContainer = document.getElementById('results-container');
+        const resultsList = document.getElementById('results-list');
+        const testRevealButton = document.getElementById('test-reveal-button');
+        const testAllDrawnButton = document.getElementById('test-all-drawn-button');
+        const assignDatesButton = document.getElementById('assign-dates-button'); // 獲取新按鈕
+        const dateAssignmentContainer = document.getElementById('date-assignment-container');
+        const dateAssignmentList = document.getElementById('date-assignment-list');
+
+        let currentCards = [];
+        let currentPairings = []; // <--- 新增：儲存當前配對結果
+
+        resultsContainer.style.display = 'none'; // 預設隱藏結果區域
+        dateAssignmentContainer.style.display = 'none'; // 預設隱藏日期分配區域
+
+        // --- Socket.IO 事件監聽 ---
+        socket.on('connect', () => {
+            console.log('Connected to server as screen', socket.id);
+            statusDiv.textContent = '已連線到伺服器';
+            // 連線成功後，向後端請求 QR code
+            fetch('/qr')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.qrCodeDataUrl) {
+                        qrCodeDiv.innerHTML = `<img src="${data.qrCodeDataUrl}" alt="Scan to join">`;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching QR code:', error);
+                    qrCodeDiv.textContent = '無法載入 QR Code';
+                });
+        });
+
+        socket.on('disconnect', () => {
+            console.log('Disconnected from server');
+            statusDiv.textContent = '與伺服器斷線，請重新整理';
+            qrCodeDiv.textContent = '-';
+            qrLinkElement.textContent = '';
+        });
+
+        socket.on('connect_error', (err) => {
+            console.error('Connection error:', err);
+            statusDiv.textContent = `連線錯誤: ${err.message}`;
+        });
+
+        // 監聽來自伺服器的卡牌狀態更新
+        socket.on('updateCards', (cards) => {
+            console.log('Received card update:', cards);
+            currentCards = cards;
+            renderCards(cards);
+            updateRemainingCount(cards);
+        });
+
+        // 監聽 QR code URL 更新 (雖然目前只在連線時請求一次，但保留彈性)
+        socket.on('qrCodeUrl', (url) => {
+            console.log('Received QR Code URL:', url);
+            qrLinkElement.textContent = `或者手機瀏覽器打開: ${url}`;
+            // 如果需要動態更新 QR code 圖片，可以在這裡重新 fetch
+        });
+
+        // 監聽剩餘牌數更新
+        socket.on('cardsRemaining', (count) => {
+            console.log('Remaining cards:', count);
+            remainingCardsSpan.textContent = count;
+        });
+
+        // 監聽連線人數更新
+        socket.on('userCount', (count) => {
+            console.log('User count:', count);
+            // 減去大螢幕自身 (如果伺服器端有計算的話)
+            // 這裡假設伺服器傳來的是總連線數
+            userCountSpan.textContent = count > 0 ? count -1 : 0; // 顯示手機連線數
+        });
+
+        // 修改：監聽來自伺服器的 配對 結果顯示事件
+        socket.on('showPairingResults', (pairings) => { // <-- 事件名稱改變
+            console.log('Received pairing results:', pairings);
+            currentPairings = pairings; // <--- 儲存配對結果
+            renderPairingResults(pairings); // <-- 調用新的渲染函數
+            assignDatesButton.disabled = !(pairings && pairings.length > 0); // <--- 如果有結果則啟用按鈕
+            dateAssignmentContainer.style.display = 'none'; // 收到新結果時隱藏舊的日期分配
+        });
+
+        // 修改：監聽遊戲重設事件
+        socket.on('gameReset', () => {
+            console.log('Game has been reset');
+            statusDiv.textContent = '遊戲已重設';
+            resultsContainer.style.display = 'none'; // 隱藏結果
+            resultsList.innerHTML = ''; // 清空結果列表
+            currentPairings = []; // <--- 清空配對結果
+            assignDatesButton.disabled = true; // <--- 禁用按鈕
+            dateAssignmentContainer.style.display = 'none'; // <--- 隱藏日期分配
+            // 重新請求 QR code，因為可能 IP 會變
+             fetch('/qr')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.qrCodeDataUrl) {
+                        qrCodeDiv.innerHTML = `<img src="${data.qrCodeDataUrl}" alt="Scan to join">`;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching QR code:', error);
+                    qrCodeDiv.textContent = '無法載入 QR Code';
+                });
+            // 後端應該會緊接著發送 updateCards
+            remainingCardsSpan.textContent = remaining;
+        });
+
+        // --- 畫面渲染函數 ---
+        function renderCards(cards) {
+            cardContainer.innerHTML = ''; // 清空現有卡牌
+            cards.forEach(card => {
+                const cardElement = document.createElement('div');
+                cardElement.classList.add('card');
+                cardElement.dataset.cardId = card.id;
+                cardElement.textContent = card.id; // 顯示卡牌 ID (可替換成圖案或牌背)
+                if (card.drawn) {
+                    cardElement.classList.add('drawn');
+                }
+                cardContainer.appendChild(cardElement);
+            });
+        }
+
+        function updateRemainingCount(cards) {
+            const remaining = cards.filter(card => !card.drawn).length;
+            remainingCardsSpan.textContent = remaining;
+        }
+
+        // 修改：渲染 配對 結果列表的函數
+        function renderPairingResults(pairings) { // <-- 函數名和參數改變
+            resultsList.innerHTML = ''; // 清空舊結果
+            if (pairings && pairings.length > 0) {
+                resultsContainer.querySelector('h2').textContent = '配對結果'; // 更新標題
+                pairings.forEach(pairing => {
+                    const li = document.createElement('li');
+                    let membersHtml = '';
+                    pairing.members.forEach((member, index) => {
+                        const parts = member.name.split(' ');
+                        const namePart = parts[0] || '??';
+                        const titlePart = parts.slice(1).join(' ') || '';
+                        membersHtml += `${index > 0 ? ' & ' : ''}<span class="member-name">${namePart}</span> <span class="title-part">(${titlePart})</span>`;
+                    });
+                    // 如果只有一個人（奇數情況）
+                    if (pairing.members.length === 1) {
+                        membersHtml += ' (輪空)'; // 或者其他提示
+                    }
+
+                    li.innerHTML = `<strong>第 ${pairing.group} 組:</strong> ${membersHtml}`;
+                    resultsList.appendChild(li);
+                });
+                resultsContainer.style.display = 'block'; // 顯示結果區域
+            } else {
+                 resultsContainer.querySelector('h2').textContent = '抽獎結果'; // 重設標題
+                 resultsContainer.style.display = 'none'; // 如果沒有結果，隱藏區域
+            }
+            // 渲染完配對結果後，根據是否有結果更新按鈕狀態
+            assignDatesButton.disabled = !(pairings && pairings.length > 0);
+        }
+
+        // 新增：渲染日期分配結果的函數
+        function renderDateAssignments(assignments) {
+            dateAssignmentList.innerHTML = ''; // 清空舊列表
+            const dates = Object.keys(assignments);
+            if (dates.length === 0) {
+                dateAssignmentContainer.style.display = 'none';
+                return;
+            }
+
+            const listContainer = document.createElement('div');
+            listContainer.style.display = 'grid';
+            listContainer.style.gridTemplateColumns = 'repeat(auto-fit, minmax(250px, 1fr))'; // 自動調整欄數
+            listContainer.style.gap = '20px';
+
+            dates.sort(); // 按日期排序 (可選)
+            dates.forEach(date => {
+                const dateSection = document.createElement('div');
+                const dateTitle = document.createElement('h3');
+                dateTitle.textContent = date;
+                dateTitle.style.borderBottom = '1px solid #ccc';
+                dateTitle.style.paddingBottom = '5px';
+                dateTitle.style.marginBottom = '10px';
+                dateSection.appendChild(dateTitle);
+
+                const groupList = document.createElement('ul');
+                groupList.style.listStyle = 'none';
+                groupList.style.paddingLeft = '0';
+
+                assignments[date].forEach(pairing => {
+                    const li = document.createElement('li');
+                    li.style.marginBottom = '8px';
+                    let membersHtml = '';
+                    pairing.members.forEach((member, index) => {
+                        const parts = member.name.split(' ');
+                        const namePart = parts[0] || '??';
+                        // 職稱部分可以選擇性顯示或省略
+                        // const titlePart = parts.slice(1).join(' ') || '';
+                        // membersHtml += `${index > 0 ? ' & ' : ''}<span class="member-name">${namePart}</span> <span class="title-part">(${titlePart})</span>`;
+                         membersHtml += `${index > 0 ? ' & ' : ''}<span class="member-name">${namePart}</span>`;
+                    });
+                     if (pairing.members.length === 1) {
+                         membersHtml += ' (輪空)';
+                     }
+                    li.innerHTML = `<strong>組 ${pairing.group}:</strong> ${membersHtml}`;
+                    groupList.appendChild(li);
+                });
+                dateSection.appendChild(groupList);
+                listContainer.appendChild(dateSection);
+            });
+            dateAssignmentList.appendChild(listContainer);
+            dateAssignmentContainer.style.display = 'block'; // 顯示區域
+        }
+
+        // --- 測試按鈕事件 ---
+        testRevealButton.addEventListener('click', () => {
+             console.log('Simulating pairing results display...');
+             // 模擬一些配對數據
+             const samplePairings = [
+                 { group: 1, members: [{ id: 1, name: "楊攸仁 髮妝造型顧問" }, { id: 5, name: "吳岳軒 影音行銷" }] },
+                 { group: 2, members: [{ id: 10, name: "李子萱 中英文主持" }, { id: 25, name: "朱玲瑤 窗簾業" }] },
+                 { group: 3, members: [{ id: 51, name: "歐政儒 律師" }] } // 模擬奇數情況
+             ];
+             // 直接調用渲染函數來顯示模擬配對結果
+             currentPairings = samplePairings; // <--- 儲存模擬結果
+             renderPairingResults(samplePairings);
+        });
+
+        testAllDrawnButton.addEventListener('click', () => {
+            console.log('Simulating all cards drawn and pairing...');
+
+            // 1. 將所有卡牌標記為已抽取
+            const allCardElements = cardContainer.querySelectorAll('.card');
+            allCardElements.forEach(cardEl => {
+                cardEl.classList.add('drawn');
+            });
+
+            // 2. 更新狀態顯示
+            remainingCardsSpan.textContent = '0';
+            userCountSpan.textContent = TOTAL_CARDS; // 假設所有人都連線並抽了牌
+            statusDiv.textContent = '模擬：所有卡牌已被抽取完畢';
+
+            // 3. 創建模擬的完整配對數據 (假設 51 人)
+            //    注意：這裡的名字是為了演示，與 server.js 中的實際名字順序無關
+            const mockFullNames = [
+                "模擬者 1", "模擬者 2", "模擬者 3", "模擬者 4", "模擬者 5", "模擬者 6", "模擬者 7", "模擬者 8", "模擬者 9", "模擬者 10",
+                "模擬者 11", "模擬者 12", "模擬者 13", "模擬者 14", "模擬者 15", "模擬者 16", "模擬者 17", "模擬者 18", "模擬者 19", "模擬者 20",
+                "模擬者 21", "模擬者 22", "模擬者 23", "模擬者 24", "模擬者 25", "模擬者 26", "模擬者 27", "模擬者 28", "模擬者 29", "模擬者 30",
+                "模擬者 31", "模擬者 32", "模擬者 33", "模擬者 34", "模擬者 35", "模擬者 36", "模擬者 37", "模擬者 38", "模擬者 39", "模擬者 40",
+                "模擬者 41", "模擬者 42", "模擬者 43", "模擬者 44", "模擬者 45", "模擬者 46", "模擬者 47", "模擬者 48", "模擬者 49", "模擬者 50",
+                "模擬者 51"
+            ];
+             // 模擬打亂
+            const shuffledMockNames = mockFullNames.sort(() => Math.random() - 0.5);
+
+            const sampleFullPairings = [];
+            let groupNum = 1;
+            for (let i = 0; i < shuffledMockNames.length; i += 2) {
+                const pairMembers = [];
+                pairMembers.push({ id: i + 1, name: shuffledMockNames[i] + " (模擬職稱)" });
+                if (i + 1 < shuffledMockNames.length) {
+                     pairMembers.push({ id: i + 2, name: shuffledMockNames[i + 1] + " (模擬職稱)" });
+                }
+                 sampleFullPairings.push({ group: groupNum++, members: pairMembers });
+            }
+
+            // 4. 顯示模擬的完整配對結果
+            currentPairings = sampleFullPairings; // <--- 儲存模擬結果
+            renderPairingResults(sampleFullPairings);
+        });
+
+        // 新增：分配日期按鈕事件
+        assignDatesButton.addEventListener('click', () => {
+            if (!currentPairings || currentPairings.length === 0) {
+                alert('目前沒有配對結果可供分配日期！');
+                return;
+            }
+
+            console.log('Assigning dates to pairings...');
+
+            const dates = ['4/15', '4/22', '4/29', '5/6', '5/13', '5/20'];
+            const shuffledPairings = [...currentPairings].sort(() => Math.random() - 0.5); // 隨機打亂副本
+
+            const assignments = {};
+            dates.forEach(date => assignments[date] = []); // 初始化
+
+            const numPairings = shuffledPairings.length;
+            const numDates = dates.length;
+            const baseGroupsPerDate = Math.floor(numPairings / numDates);
+            const remainderGroups = numPairings % numDates;
+
+            let currentIndex = 0;
+            for (let i = 0; i < numDates; i++) {
+                const date = dates[i];
+                const groupsForThisDate = baseGroupsPerDate + (i < remainderGroups ? 1 : 0);
+                const endIndex = currentIndex + groupsForThisDate;
+                assignments[date] = shuffledPairings.slice(currentIndex, endIndex);
+                currentIndex = endIndex;
+            }
+
+            console.log('Date assignments:', assignments);
+            renderDateAssignments(assignments); // 渲染結果
+        });
+
+        // --- 音樂控制 ---
+        const bgMusic = document.getElementById('background-music');
+        const playPauseButton = document.getElementById('play-pause-button');
+        let isPlaying = false;
+
+        // 嘗試自動播放 (可能被瀏覽器阻止)
+        bgMusic.play().then(() => {
+            isPlaying = true;
+            playPauseButton.textContent = '暫停音樂';
+        }).catch(error => {
+            console.log("背景音樂自動播放失敗，需要使用者互動。", error);
+            // 即使自動播放失敗，也要設定按鈕狀態
+             playPauseButton.textContent = '播放音樂';
+             isPlaying = false; // 確保狀態正確
+        });
+
+
+        playPauseButton.addEventListener('click', () => {
+            if (isPlaying) {
+                bgMusic.pause();
+                playPauseButton.textContent = '播放音樂';
+            } else {
+                bgMusic.play().then(() => {
+                     playPauseButton.textContent = '暫停音樂';
+                 }).catch(error => {
+                     console.error("無法播放音樂:", error);
+                     // 可能需要使用者再次點擊或其他互動
+                 });
+            }
+            isPlaying = !isPlaying;
+        });
+
+        // --- 初始需要知道總牌數 ---
+        // 由於測試按鈕需要知道總人數，我們在客戶端也定義一下
+        // (更健壯的做法是由伺服器告知，但為簡化測試按鈕，暫時硬編碼)
+        const TOTAL_CARDS = 51;
+
+    </script>
+</body>
+</html> 

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>抽獎系統 - 後台管理</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 30px;
+            background-color: #f8f8f8;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 40px;
+        }
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 30px; /* 按鈕間距 */
+            margin-bottom: 30px;
+        }
+        button {
+            padding: 15px 30px;
+            font-size: 1.3em;
+            cursor: pointer;
+            border-radius: 5px;
+            border: none;
+            color: white;
+            transition: background-color 0.3s ease, transform 0.1s ease;
+        }
+        button:hover {
+             opacity: 0.9;
+        }
+         button:active {
+             transform: scale(0.98);
+         }
+        #reveal-button {
+            background-color: #e67e22; /* 橘色 */
+        }
+        #reset-button {
+            background-color: #e74c3c; /* 紅色 */
+        }
+        #status {
+            margin-top: 20px;
+            text-align: center;
+            font-size: 1.1em;
+            color: #555;
+            min-height: 1.5em; /* 避免訊息消失時跳動 */
+        }
+    </style>
+</head>
+<body>
+    <h1>抽獎系統 - 後台控制</h1>
+
+    <div class="controls">
+        <button id="reveal-button">統一開牌</button>
+        <button id="reset-button">重設遊戲</button>
+    </div>
+
+    <div id="status"></div>
+
+    <script>
+        const revealButton = document.getElementById('reveal-button');
+        const resetButton = document.getElementById('reset-button');
+        const statusDiv = document.getElementById('status');
+
+        revealButton.addEventListener('click', () => {
+            statusDiv.textContent = '正在發送開牌指令...';
+            fetch('/reveal') // 向後端 /reveal 端點發送請求
+                .then(response => response.text())
+                .then(message => {
+                    console.log('Reveal command response:', message);
+                    statusDiv.textContent = `開牌指令已發送： ${message}`;
+                     setTimeout(() => statusDiv.textContent = '', 3000); // 3秒後清除訊息
+                })
+                .catch(error => {
+                    console.error('Error sending reveal command:', error);
+                    statusDiv.textContent = `發送開牌指令失敗: ${error}`;
+                });
+        });
+
+        resetButton.addEventListener('click', () => {
+            if (confirm('確定要重設遊戲嗎？所有已抽的牌將被回收，使用者需要重新抽牌。')) {
+                statusDiv.textContent = '正在發送重設指令...';
+                fetch('/reset') // 向後端 /reset 端點發送請求
+                    .then(response => response.text())
+                    .then(message => {
+                        console.log('Reset command response:', message);
+                        statusDiv.textContent = `重設指令已發送： ${message}`;
+                        setTimeout(() => statusDiv.textContent = '', 3000); // 3秒後清除訊息
+                    })
+                    .catch(error => {
+                        console.error('Error sending reset command:', error);
+                        statusDiv.textContent = `發送重設指令失敗: ${error}`;
+                    });
+            }
+        });
+    </script>
+</body>
+</html> 

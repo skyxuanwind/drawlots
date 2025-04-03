@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>抽獎系統 - 手機端</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background-color: #e0e0e0;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+            text-align: center;
+        }
+        #status {
+            font-size: 1.2em;
+            margin-bottom: 20px;
+            color: #333;
+        }
+        #draw-button {
+            padding: 15px 30px;
+            font-size: 1.5em;
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            transition: background-color 0.3s ease;
+            margin-bottom: 20px;
+        }
+        #draw-button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        #draw-button:hover:not(:disabled) {
+            background-color: #45a049;
+        }
+
+        #card-display {
+            margin-top: 30px;
+            width: 80%;
+            max-width: 300px;
+            perspective: 1000px;
+        }
+
+        .card-placeholder {
+             aspect-ratio: 2 / 3;
+             background-color: #bbb;
+             border: 2px dashed #888;
+             color: #666;
+             display: flex;
+             justify-content: center;
+             align-items: center;
+             font-size: 1em;
+             border-radius: 8px;
+        }
+
+        .drawn-card {
+            aspect-ratio: 2 / 3;
+            background-color: #4a90e2; /* 牌背 */
+            color: white;
+            display: flex;
+            flex-direction: column; /* 讓文字垂直排列 */
+            justify-content: center;
+            align-items: center;
+            font-size: 1.8em;
+            font-weight: bold;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            position: relative;
+            transform-style: preserve-3d;
+            transition: transform 0.8s ease, opacity 0.5s ease; /* 加入 opacity transition */
+            opacity: 1; /* 預設可見 */
+        }
+        .drawn-card.initial-state { /* 新增一個初始狀態 */
+             opacity: 0;
+             transform: scale(0.8) rotateY(0deg); /* 稍微縮小，確保是牌背朝上 */
+        }
+        .drawn-card.revealed {
+            transform: rotateY(180deg) scale(1); /* 翻牌時確保恢復正常大小 */
+            background-color: #fff; /* 牌面背景 */
+            color: #333;
+            opacity: 1;
+        }
+
+        .card-face, .card-back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            display: flex;
+            flex-direction: column; /* Ensure content stacks vertically */
+            justify-content: center;
+            align-items: center;
+            border-radius: 8px;
+            padding: 10px; /* Add padding inside card */
+            box-sizing: border-box; /* Include padding in dimensions */
+        }
+
+        .card-back {
+            /* background-image: radial-gradient(circle at top left, #4a90e2, #1e3a8a); /* 移除漸層 */
+            background-image: url('card-back-logo.jpg'); /* 使用圖片 */
+            background-size: cover; /* 圖片覆蓋 */
+            background-position: center; /* 圖片居中 */
+            background-repeat: no-repeat; /* 不重複 */
+            /* color: white; */ /* 移除文字顏色 */
+            /* font-size: 0.8em; */
+            /* box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.2); */ /* 移除內陰影 */
+            /* border: 1px solid rgba(255, 255, 255, 0.3); */ /* 移除邊框 */
+            border-radius: 8px; /* 繼承父元素圓角 */
+            overflow: hidden; /* 確保圖片不超出邊界 */
+        }
+         .card-back span {
+             display: none; /* 隱藏牌背上的數字 */
+         }
+        .card-face {
+             background-color: #fff;
+             color: #333;
+             transform: rotateY(180deg);
+             font-size: 1em;
+             line-height: 1.4;
+             text-align: center;
+             padding: 15px;
+             border-radius: 8px; /* 牌面也加圓角 */
+             border: 1px solid #ccc; /* 給牌面加個淺邊框 */
+        }
+        .card-name-part { /* 名字部分 */
+            font-weight: bold;
+            font-size: 1.8em; /* 名字放大 */
+            display: block; /* 獨佔一行 */
+            margin-bottom: 8px; /* 與職稱間距 */
+        }
+        .card-title-part { /* 職稱部分 */
+             font-size: 1.0em; /* 職稱正常大小或稍小 */
+             color: #555; /* 職稱顏色稍淡 */
+             display: block; /* 獨佔一行 */
+        }
+        .card-id-face {
+            font-size: 0.7em; /* 牌號可以更小 */
+            color: #999;
+            position: absolute; /* 絕對定位到角落 */
+            top: 8px;
+            right: 8px;
+        }
+
+        #error-message {
+            color: red;
+            margin-top: 15px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div id="status">正在連線到伺服器...</div>
+    <button id="draw-button" disabled>請稍候</button>
+    <div id="card-display">
+        <div class="card-placeholder">您尚未抽牌</div>
+    </div>
+    <div id="error-message"></div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        // 修改：強制使用 WebSocket
+        const socket = io({
+            query: { type: 'mobile' },
+            transports: ['websocket'] // <-- 強制只用 WebSocket
+        });
+
+        const statusDiv = document.getElementById('status');
+        const drawButton = document.getElementById('draw-button');
+        const cardDisplay = document.getElementById('card-display');
+        const errorMessageDiv = document.getElementById('error-message');
+
+        let myCard = null; // { id: number, revealed: boolean, name: string | null }
+        let hasDrawn = false;
+
+        // --- Socket.IO 事件監聽 ---
+        socket.on('connect', () => {
+            console.log('Connected to server as mobile', socket.id);
+            statusDiv.textContent = '已連線，準備抽牌！';
+            // 初始狀態按鈕可能是 disabled，等 welcome 事件再啟用
+        });
+
+        socket.on('disconnect', () => {
+            console.log('Disconnected from server');
+            statusDiv.textContent = '與伺服器斷線';
+            drawButton.disabled = true;
+            drawButton.textContent = '已斷線';
+            errorMessageDiv.textContent = '請檢查網路連線並重新整理頁面。';
+        });
+
+        socket.on('connect_error', (err) => {
+            console.error('Connection error:', err);
+            statusDiv.textContent = `連線錯誤`;
+             errorMessageDiv.textContent = `無法連線到伺服器: ${err.message}`;
+        });
+
+        // 伺服器確認連線成功，可以抽牌
+        socket.on('welcome', () => {
+            console.log('Welcome received. Ready to draw.');
+            if (!hasDrawn) {
+                drawButton.disabled = false;
+                drawButton.textContent = '抽牌';
+                cardDisplay.innerHTML = '<div class="card-placeholder">點擊上方按鈕抽牌</div>';
+            } else {
+                // 如果已抽牌 (例如頁面刷新後重連)，按鈕維持禁用
+                drawButton.disabled = true;
+                drawButton.textContent = '已抽牌';
+            }
+            errorMessageDiv.textContent = ''; // 清除之前的錯誤訊息
+        });
+
+        // 收到自己抽到的牌
+        socket.on('cardDrawn', (cardData) => {
+            console.log('Card drawn:', cardData);
+            hasDrawn = true;
+            myCard = cardData;
+            drawButton.disabled = true;
+            drawButton.textContent = '等待開牌';
+            statusDiv.textContent = '您已抽到一張牌，請等待統一開牌。';
+            renderMyCard();
+            errorMessageDiv.textContent = '';
+        });
+
+        // 收到翻牌指令
+        socket.on('revealCard', (cardData) => {
+            console.log('Reveal command received:', cardData);
+            if (myCard && myCard.id === cardData.id) {
+                myCard.revealed = true;
+                myCard.name = cardData.name; // 更新名字
+                renderMyCard(); // 重新渲染以顯示翻牌動畫和名字
+                statusDiv.textContent = '開牌！';
+            } else {
+                console.warn('Received reveal command for a card that is not mine or I dont have a card.');
+            }
+        });
+
+        // 收到錯誤訊息
+        socket.on('errorMsg', (message) => {
+            console.error('Server error:', message);
+            errorMessageDiv.textContent = message;
+            // 如果是因為已抽牌而出錯，確保按鈕是禁用狀態
+            if (message.includes('already drawn')) {
+                hasDrawn = true; // 同步狀態
+                drawButton.disabled = true;
+                drawButton.textContent = '已抽牌';
+            }
+        });
+
+         // 監聽遊戲重設事件
+        socket.on('gameReset', () => {
+            console.log('Game has been reset');
+            statusDiv.textContent = '遊戲已重設，請重新抽牌';
+            myCard = null;
+            hasDrawn = false;
+            drawButton.disabled = false; // 可以重新抽牌
+            drawButton.textContent = '抽牌';
+            cardDisplay.innerHTML = '<div class="card-placeholder">遊戲已重設，請點擊上方按鈕重新抽牌</div>';
+            errorMessageDiv.textContent = '';
+        });
+
+        // --- 使用者互動 ---
+        drawButton.addEventListener('click', () => {
+            if (!socket.connected) {
+                errorMessageDiv.textContent = '尚未連線到伺服器。';
+                return;
+            }
+            console.log('Requesting to draw a card...');
+            socket.emit('drawCard');
+            drawButton.disabled = true;
+            drawButton.textContent = '抽牌中...';
+            errorMessageDiv.textContent = ''; // 清除錯誤
+        });
+
+        // --- 畫面渲染函數 (修改) ---
+        function renderMyCard() {
+            if (!myCard) {
+                cardDisplay.innerHTML = '<div class="card-placeholder">您尚未抽牌</div>';
+                return;
+            }
+
+            let namePart = '??';
+            let titlePart = '';
+            let isInitialDraw = !cardDisplay.querySelector('.drawn-card'); // 判斷是否為第一次繪製
+
+            if (myCard.name) {
+                const parts = myCard.name.split(' ');
+                namePart = parts[0] || '??';
+                titlePart = parts.slice(1).join(' ') || '';
+            }
+
+            // 初始 class 包含 initial-state (如果是第一次繪製) 和 revealed (如果已翻牌)
+            const initialClass = `drawn-card ${isInitialDraw && !myCard.revealed ? 'initial-state' : ''} ${myCard.revealed ? 'revealed' : ''}`;
+
+            cardDisplay.innerHTML = `
+                <div class="${initialClass}" data-card-id="${myCard.id}">
+                    <div class="card-face">
+                        <span class="card-id-face">#${myCard.id}</span>
+                        <span class="card-name-part">${namePart}</span>
+                        <span class="card-title-part">${titlePart}</span>
+                    </div>
+                    <div class="card-back">
+                         <span>${myCard.id}</span>
+                         (等待開牌)
+                    </div>
+                </div>
+            `;
+
+            // 如果是第一次繪製，延遲一小段時間移除 initial-state 以觸發動畫
+            if (isInitialDraw && !myCard.revealed) {
+                 // 使用 requestAnimationFrame 確保 DOM 更新後再移除 class
+                requestAnimationFrame(() => {
+                    const cardElement = cardDisplay.querySelector('.drawn-card');
+                    if (cardElement) {
+                        // 再用 setTimeout 確保有足夠時間觸發 transition
+                        setTimeout(() => {
+                             cardElement.classList.remove('initial-state');
+                        }, 50); // 短暫延遲
+                    }
+                });
+            }
+        }
+
+        // 初始渲染
+        renderMyCard();
+
+    </script>
+</body>
+</html> 
