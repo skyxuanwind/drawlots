@@ -231,24 +231,40 @@
                  return;
              }
              const listContainer = document.createElement('div');
-             listContainer.style.display = 'grid';
-             listContainer.style.gridTemplateColumns = 'repeat(auto-fit, minmax(220px, 1fr))';
-             listContainer.style.gap = '15px';
+             listContainer.style.display = 'flex';
+             listContainer.style.flexDirection = 'row';
+             listContainer.style.overflowX = 'auto';
+             listContainer.style.padding = '10px 0';
+             listContainer.style.gap = '20px';
+
              dates.sort();
              dates.forEach(date => {
                  const dateSection = document.createElement('div');
+                 dateSection.style.flex = '0 0 auto';
+                 dateSection.style.minWidth = '200px';
+                 dateSection.style.border = '1px solid #ddd';
+                 dateSection.style.padding = '10px';
+                 dateSection.style.borderRadius = '5px';
+                 dateSection.style.backgroundColor = '#fff';
+
                  const dateTitle = document.createElement('h3');
                  dateTitle.textContent = date;
                  dateTitle.style.borderBottom = '1px solid #ccc';
                  dateTitle.style.paddingBottom = '5px';
                  dateTitle.style.marginBottom = '10px';
+                 dateTitle.style.marginTop = '0';
+                 dateTitle.style.textAlign = 'center';
                  dateSection.appendChild(dateTitle);
+
                  const groupList = document.createElement('ul');
                  groupList.style.listStyle = 'none';
                  groupList.style.paddingLeft = '0';
+                 groupList.style.margin = '0';
+
                  assignments[date].forEach(pairing => {
                      const li = document.createElement('li');
                      li.style.marginBottom = '6px';
+                     li.style.fontSize = '0.95em';
                      let membersHtml = '';
                      pairing.members.forEach((member, index) => {
                          const namePart = member.name ? member.name.split(' ')[0] : '??';
