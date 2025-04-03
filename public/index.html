@@ -231,27 +231,25 @@
                  return;
              }
              const listContainer = document.createElement('div');
-             listContainer.style.display = 'flex';
-             listContainer.style.flexDirection = 'row';
-             listContainer.style.overflowX = 'auto';
-             listContainer.style.padding = '10px 0';
+             listContainer.style.display = 'grid';
+             listContainer.style.gridTemplateColumns = 'repeat(auto-fit, minmax(220px, 1fr))';
              listContainer.style.gap = '20px';
+             listContainer.style.padding = '10px';
 
              dates.sort();
              dates.forEach(date => {
                  const dateSection = document.createElement('div');
-                 dateSection.style.flex = '0 0 auto';
-                 dateSection.style.minWidth = '200px';
                  dateSection.style.border = '1px solid #ddd';
-                 dateSection.style.padding = '10px';
+                 dateSection.style.padding = '15px';
                  dateSection.style.borderRadius = '5px';
                  dateSection.style.backgroundColor = '#fff';
+                 dateSection.style.boxShadow = '0 1px 3px rgba(0,0,0,0.05)';
 
                  const dateTitle = document.createElement('h3');
                  dateTitle.textContent = date;
                  dateTitle.style.borderBottom = '1px solid #ccc';
-                 dateTitle.style.paddingBottom = '5px';
-                 dateTitle.style.marginBottom = '10px';
+                 dateTitle.style.paddingBottom = '8px';
+                 dateTitle.style.marginBottom = '15px';
                  dateTitle.style.marginTop = '0';
                  dateTitle.style.textAlign = 'center';
                  dateSection.appendChild(dateTitle);
@@ -263,15 +261,15 @@
 
                  assignments[date].forEach(pairing => {
                      const li = document.createElement('li');
-                     li.style.marginBottom = '6px';
-                     li.style.fontSize = '0.95em';
+                     li.style.marginBottom = '8px';
+                     li.style.fontSize = '1em';
                      let membersHtml = '';
                      pairing.members.forEach((member, index) => {
                          const namePart = member.name ? member.name.split(' ')[0] : '??';
-                         membersHtml += `${index > 0 ? ' & ' : ''}<span class="pair-member">${namePart}</span>`;
+                         membersHtml += `${index > 0 ? ' &<br/>' : ''}<span class="pair-member">${namePart}</span>`;
                      });
                      if (pairing.members.length === 1) membersHtml += ' (輪空)';
-                     li.innerHTML = `組 ${pairing.group}: ${membersHtml}`;
+                     li.innerHTML = `<strong style="display: inline-block; min-width: 40px;">組 ${pairing.group}:</strong> ${membersHtml}`;
                      groupList.appendChild(li);
                  });
                  dateSection.appendChild(groupList);
