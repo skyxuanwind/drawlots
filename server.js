@@ -2,39 +2,43 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const qrcode = require('qrcode');
-const os = require('os'); // 用於取得 IP
 
 const app = express();
 const server = http.createServer(app);
 
+// --- 取得公開網址 ---
+// Fly.io 會設定 FLY_APP_NAME 環境變數
+const appName = process.env.FLY_APP_NAME;
+const PORT = process.env.PORT || 3000; // 先定義 PORT
+const publicHost = appName ? `${appName}.fly.dev` : 'localhost'; // 正確的公開主機名
+const serverPort = appName ? 443 : PORT; // Fly.io 公開訪問用 443 (HTTPS) 或 80 (HTTP)，本地用 PORT
+const serverProtocol = appName ? 'https' : 'http'; // Fly.io 強制 HTTPS
+const PUBLIC_URL = `${serverProtocol}://${publicHost}`; // 公開基礎 URL
+const MOBILE_URL = `${PUBLIC_URL}/mobile`; // 手機頁面的公開 URL
+
+
 // --- 精確設定 CORS ---
 const allowedOrigins = [
-    'https://drawlots.fly.dev', // 您的 Fly.io 應用主網址
-    // 如果您還需要本機測試，可以加上
-    // 'http://localhost:3000',
-    // 'http://<您的本機IP>:3000'
+    PUBLIC_URL, // <--- 使用公開 URL
+    // 如果需要本機測試
+    `http://localhost:${PORT}`,
+    // 'http://<您的本機IP>:3000' // 如有需要可取消註解並填入
 ];
 
 const io = socketIo(server, {
     cors: {
         origin: function (origin, callback) {
-            // allow requests with no origin (like mobile apps or curl requests) OR from allowed origins
             if (!origin || allowedOrigins.indexOf(origin) !== -1) {
                 callback(null, true);
             } else {
-                console.warn(`CORS blocked for origin: ${origin}`); // 在伺服器日誌中查看被拒絕的來源
+                console.warn(`CORS blocked for origin: ${origin}`);
                 callback(new Error('Not allowed by CORS'));
             }
         },
         methods: ["GET", "POST"],
-        // credentials: true // 如果您需要傳遞 cookie 或 header，可能需要設為 true
     },
-    // 可以嘗試明確指定 transports (雖然通常不需要)
-    // transports: ['websocket', 'polling']
+    transports: ['websocket'] // <--- 保持強制 WebSocket
 });
-
-
-const PORT = process.env.PORT || 3000; // 設定伺服器端口
 
 // --- 卡牌資料與狀態 ---
 let cards = []; // 存放所有牌的資訊 { id: number, revealed: boolean, holder: string | null, name: string }
@@ -57,23 +61,6 @@ const TOTAL_CARDS = namesList.length; // 根據名字列表長度決定總牌數
 
 // --- 連線使用者 ---
 const connectedUsers = new Map(); // socket.id -> { type: 'screen' | 'mobile', hasDrawn: boolean }
-
-
-// --- 取得本機 IP 地址 ---
-function getLocalIpAddress() {
-    const interfaces = os.networkInterfaces();
-    for (const name of Object.keys(interfaces)) {
-        for (const iface of interfaces[name]) {
-            // Skip over internal (i.e. 127.0.0.1) and non-ipv4 addresses
-            if (iface.family === 'IPv4' && !iface.internal) {
-                return iface.address;
-            }
-        }
-    }
-    return 'localhost'; // Fallback
-}
-const SERVER_IP = getLocalIpAddress();
-const MOBILE_URL = `http://${SERVER_IP}:${PORT}/mobile`;
 
 
 // --- 初始化卡牌 (修改) ---
@@ -120,12 +107,11 @@ app.get('/admin', (req, res) => {
   res.sendFile(__dirname + '/public/admin.html');
 });
 
-// 產生 QR code 的路由
+// 產生 QR code 的路由 (修改)
 app.get('/qr', async (req, res) => {
     try {
-        console.log(`Generating QR code for: ${MOBILE_URL}`);
-        const qrCodeDataUrl = await qrcode.toDataURL(MOBILE_URL);
-        // 直接回傳 Data URL，讓前端 <img src="..."> 使用
+        console.log(`Generating QR code for: ${MOBILE_URL}`); // <--- 使用公開 URL
+        const qrCodeDataUrl = await qrcode.toDataURL(MOBILE_URL); // <--- 使用公開 URL
         res.json({ qrCodeDataUrl });
     } catch (err) {
         console.error('Error generating QR code:', err);
@@ -150,20 +136,16 @@ app.get('/reset', (req, res) => {
 });
 
 
-// --- Socket.IO 連線處理 ---
+// --- Socket.IO 連線處理 (修改) ---
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
 
-  // --- 連線類型判斷 ---
-  // 透過查詢參數或其他方式區分大螢幕和手機
   const connectionType = socket.handshake.query.type || 'unknown';
   if (connectionType === 'screen') {
       console.log(`Screen connected: ${socket.id}`);
       connectedUsers.set(socket.id, { type: 'screen', hasDrawn: false });
-      // 發送目前的卡牌狀態給大螢幕
       socket.emit('updateCards', getPublicCardState());
-      // 發送 QR code 資訊
-      socket.emit('qrCodeUrl', MOBILE_URL);
+      // socket.emit('qrCodeUrl', MOBILE_URL); // <--- 移除這個事件
 
   } else if (connectionType === 'mobile') {
       console.log(`Mobile connected: ${socket.id}`);
@@ -366,7 +348,6 @@ function resetGame() {
     // 更新大螢幕狀態
     broadcastToScreens('updateCards', getPublicCardState());
     broadcastToScreens('userCount', connectedUsers.size);
-    broadcastToScreens('qrCodeUrl', MOBILE_URL);
     broadcastToScreens('showPairingResults', []); // 發送空配對結果以清除顯示
 
     // 通知手機端返回初始狀態
@@ -374,11 +355,13 @@ function resetGame() {
 }
 
 
-// --- 啟動伺服器 ---
-server.listen(PORT, () => {
-  console.log(`Server listening on http://${SERVER_IP}:${PORT}`);
-  console.log(`Admin interface available at http://${SERVER_IP}:${PORT}/admin`); // 新增提示
-  console.log(`Scan QR code at http://${SERVER_IP}:${PORT}/qr to join on mobile.`);
+// --- 啟動伺服器 (修改) ---
+server.listen(PORT, '0.0.0.0', () => { // <-- 監聽在 0.0.0.0
+  // 監聽在 0.0.0.0 上，以便 Fly.io 可以正確轉發
+  console.log(`Server internal listening on port ${PORT}`); // 顯示內部監聽端口
+  console.log(`App publicly available at: ${PUBLIC_URL}`); // 顯示公開網址
+  console.log(`Admin interface: ${PUBLIC_URL}/admin`); // 顯示公開後台網址
+  console.log(`Mobile page: ${MOBILE_URL}`); // 顯示公開手機網址
   // 初始廣播狀態
   broadcastToScreens('updateCards', getPublicCardState());
   broadcastToScreens('userCount', connectedUsers.size);

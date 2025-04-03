@@ -139,7 +139,6 @@
     <div id="qr-code-container">
         <h2>掃描 QR Code 加入抽獎</h2>
         <div id="qr-code">正在載入 QR Code...</div>
-        <p id="qr-link"></p>
     </div>
     <div id="info">
         <p>剩餘牌數: <span id="remaining-cards">--</span></p>
@@ -188,7 +187,6 @@
 
         const cardContainer = document.getElementById('card-container');
         const qrCodeDiv = document.getElementById('qr-code');
-        const qrLinkElement = document.getElementById('qr-link');
         const remainingCardsSpan = document.getElementById('remaining-cards');
         const userCountSpan = document.getElementById('user-count');
         const statusDiv = document.getElementById('status');
@@ -228,7 +226,6 @@
             console.log('Disconnected from server');
             statusDiv.textContent = '與伺服器斷線，請重新整理';
             qrCodeDiv.textContent = '-';
-            qrLinkElement.textContent = '';
         });
 
         socket.on('connect_error', (err) => {
@@ -242,13 +239,6 @@
             currentCards = cards;
             renderCards(cards);
             updateRemainingCount(cards);
-        });
-
-        // 監聽 QR code URL 更新 (雖然目前只在連線時請求一次，但保留彈性)
-        socket.on('qrCodeUrl', (url) => {
-            console.log('Received QR Code URL:', url);
-            qrLinkElement.textContent = `或者手機瀏覽器打開: ${url}`;
-            // 如果需要動態更新 QR code 圖片，可以在這裡重新 fetch
         });
 
         // 監聽剩餘牌數更新
