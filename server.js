@@ -405,16 +405,44 @@ function startPairingAndReveal() {
     }
     console.log('Generated pairings:', JSON.stringify(pairingResults, null, 2));
 
+    // --- Find unpaired participant ---
+    const pairedIds = new Set();
+    pairingResults.forEach(pair => {
+        pair.members.forEach(member => {
+            if (member && member.id) { // Check member and id exist
+                pairedIds.add(member.id);
+            }
+        });
+    });
+
+    let unpairedParticipant = null;
+    confirmedParticipants.forEach(p => {
+        if (!pairedIds.has(p.id)) {
+            unpairedParticipant = p; // Should be at most one
+        }
+    });
+    if (unpairedParticipant) {
+        console.log(`Unpaired participant found: ${unpairedParticipant.name}`);
+    }
+    // --- End find unpaired ---
+
     // --- 揭曉階段 ---
-    // 3. 向大螢幕廣播配對結果
-    broadcastToScreens('showPairingResults', pairingResults);
+    // 3. 向大螢幕廣播配對結果 (包含輪空者資訊)
+    broadcastToScreens('showPairingResults', {
+        pairings: pairingResults,
+        unpaired: unpairedParticipant // Send null if everyone is paired
+    });
 
     // 4. 向大螢幕廣播每張卡牌的揭曉事件 (包含名字)
     confirmedParticipants.forEach(p => {
-         broadcastToScreens('revealCard', { cardId: p.visualCardId, name: p.name });
+         // Ensure visualCardId exists before broadcasting reveal
+         if (p.visualCardId) { 
+             broadcastToScreens('revealCard', { cardId: p.visualCardId, name: p.name });
+         } else {
+              console.warn(`Participant ${p.name} confirmed but missing visualCardId for reveal.`);
+         }
     });
     console.log('Sent reveal commands for visual cards to screens.');
-
 
     // 5. 向手機端發送各自的配對夥伴
     pairingResults.forEach(pair => {

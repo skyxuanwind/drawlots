@@ -24,6 +24,10 @@
              <div id="results">
                  <h2>配對結果</h2>
                  <ul id="results-list"><li>尚無配對結果</li></ul>
+                 <!-- Unpaired Person Display -->
+                 <div id="unpaired-info" style="margin-top: 15px; padding-top: 10px; border-top: 1px dashed #ccc; display: none; text-align: center;">
+                     <h4>本輪輪空：<span id="unpaired-name" style="color: #e67e22; font-weight: bold;"></span></h4>
+                 </div>
                  <!-- Date Assignment Button -->
                  <button id="assign-dates-button" style="margin-top: 15px; width: 100%; background-color: #17a2b8;" disabled>分配簡報日期</button>
              </div>
@@ -78,6 +82,8 @@
         const bgMusic = document.getElementById('background-music'); // Music player
         const playPauseButton = document.getElementById('play-pause-button'); // Music button
         const testButton = document.getElementById('test-button');
+        const unpairedInfoDiv = document.getElementById('unpaired-info'); // Get unpaired div
+        const unpairedNameSpan = document.getElementById('unpaired-name'); // Get unpaired name span
 
         let currentCardsState = [];
         let currentPairings = [];
@@ -123,11 +129,25 @@
             } else { console.warn(`Card element not found for reveal: ${cardId}`); }
         });
 
-        socket.on('showPairingResults', (pairings) => {
+        socket.on('showPairingResults', (data) => { // Now receives an object
+            const pairings = data.pairings;
+            const unpaired = data.unpaired;
+
             console.log('Pairing results:', pairings);
-            currentPairings = pairings;
+            console.log('Unpaired participant:', unpaired);
+            
+            currentPairings = pairings; // Still store pairings for date assignment
             renderPairingResults(pairings);
-            assignDatesButton.disabled = !(pairings && pairings.length > 0); // Enable button if results exist
+            assignDatesButton.disabled = !(pairings && pairings.length > 0);
+
+            // --- Display unpaired participant ---
+            if (unpaired) {
+                unpairedNameSpan.textContent = unpaired.name;
+                unpairedInfoDiv.style.display = 'block'; // Show the div
+            } else {
+                unpairedInfoDiv.style.display = 'none'; // Hide if everyone is paired
+            }
+            // --- End display unpaired ---
         });
 
         socket.on('pairingError', (message) => { console.error('Pairing error:', message); alert(`配對失敗：${message}`); });
@@ -139,6 +159,7 @@
             renderCards([]); // Re-render empty placeholders
             resultsList.innerHTML = '<li>尚無配對結果</li>';
             assignDatesButton.disabled = true;
+            unpairedInfoDiv.style.display = 'none'; // Hide unpaired on reset
             // Stop music on reset maybe?
              if (isPlaying) {
                  bgMusic.pause();
@@ -192,12 +213,14 @@
                 const li = document.createElement('li');
                 const member1 = pair.members[0] ? pair.members[0].name : 'N/A';
                 const member2 = pair.members[1] ? pair.members[1].name : 'N/A';
-                if (member2 === '輪空') {
-                    li.innerHTML = `第 ${pair.group} 組: <span class="pair-member">${member1}</span> (本輪輪空)`;
-                } else {
-                     li.innerHTML = `第 ${pair.group} 組: <span class="pair-member">${member1}</span> &harr; <span class="pair-member">${member2}</span>`;
+                // Display pairings, even if one member is '輪空' marker (handled by server now)
+                if (member2 !== 'N/A' && member2 !== '輪空') {
+                    li.innerHTML = `第 ${pair.group} 組: <span class="pair-member">${member1}</span> &harr; <span class="pair-member">${member2}</span>`;
                 }
-                resultsList.appendChild(li);
+                // Only append if it's a valid pair display
+                 if (li.innerHTML !== '') {
+                     resultsList.appendChild(li);
+                 }
             });
         }
 
