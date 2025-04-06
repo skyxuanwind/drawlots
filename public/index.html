@@ -185,7 +185,10 @@
                 const cardElement = document.createElement('div');
                 cardElement.classList.add('card');
                 cardElement.dataset.cardId = card.id;
-                if (card.drawn) cardElement.classList.add('drawn');
+                if (card.drawn) {
+                    cardElement.classList.add('drawn');
+                    console.log(`renderCards: Card ${card.id} marked as drawn.`);
+                }
                 if (card.revealed) cardElement.classList.add('revealed');
                 let namePart = '??', titlePart = '';
                 if (card.revealed && card.name) {
@@ -213,17 +216,15 @@
                 return;
             }
             pairings.forEach(pair => {
-                const li = document.createElement('li');
-                const member1 = pair.members[0] ? pair.members[0].name : 'N/A';
-                const member2 = pair.members[1] ? pair.members[1].name : 'N/A';
-                // Display pairings, even if one member is '輪空' marker (handled by server now)
-                if (member2 !== 'N/A' && member2 !== '輪空') {
+                if (pair.members && pair.members.length === 2) {
+                    const li = document.createElement('li');
+                    const member1 = pair.members[0] ? pair.members[0].name : '??';
+                    const member2 = pair.members[1] ? pair.members[1].name : '??';
                     li.innerHTML = `第 ${pair.group} 組: <span class="pair-member">${member1}</span> &harr; <span class="pair-member">${member2}</span>`;
+                    resultsList.appendChild(li);
+                } else {
+                    console.warn('Received pairing group with unexpected member count:', pair);
                 }
-                // Only append if it's a valid pair display
-                 if (li.innerHTML !== '') {
-                     resultsList.appendChild(li);
-                 }
             });
         }
 
