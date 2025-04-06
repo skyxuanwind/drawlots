@@ -33,6 +33,16 @@
              </div>
              <button id="test-button" style="margin-top:10px; padding: 5px 10px; display: none;">模擬配對</button> <!-- 測試按鈕(可隱藏) -->
 
+            <!-- NEW: Absent Participants List -->
+            <div id="absent-list-container" style="margin-top: 20px; display: none;">
+                <h3>未參與名單</h3>
+                <ul id="absent-list" class="results-list">
+                    <li>尚無資料</li>
+                </ul>
+                 <!-- NEW: Button to pair absent participants -->
+                 <button id="pair-absent-button" class="control-button" style="margin-top: 10px;">為未參與者配對並加入日期分配</button>
+            </div>
+
         </div>
         <div class="right-panel">
              <!-- 卡牌容器 -->
@@ -84,11 +94,15 @@
         const testButton = document.getElementById('test-button');
         const unpairedInfoDiv = document.getElementById('unpaired-info'); // Get unpaired div
         const unpairedNameSpan = document.getElementById('unpaired-name'); // Get unpaired name span
+        const absentListContainer = document.getElementById('absent-list-container');
+        const absentList = document.getElementById('absent-list');
+        const pairAbsentButton = document.getElementById('pair-absent-button');
 
         let currentCardsState = [];
         let currentPairings = [];
         let isPlaying = false;
         const TOTAL_CARDS_FRONTEND = 50; // <-- Define card count for frontend rendering
+        let currentAbsentParticipants = []; // <<< NEW: Store absent participants
 
         // --- QR Code --- (No change)
         fetch('/qr').then(response => response.json()).then(data => { if (data.qrCodeDataUrl) { qrCodeImg.src = data.qrCodeDataUrl; } else { console.error('Failed to load QR code'); }}).catch(error => console.error('Error fetching QR code:', error));
@@ -137,13 +151,13 @@
 
             // --- Display unpaired participant ---
             if (unpairedInfoDiv && unpairedNameSpan) {
-                if (data.unpairedParticipant && data.unpairedParticipant.name) {
-                    console.log('Unpaired participant found:', data.unpairedParticipant.name);
-                    unpairedNameSpan.textContent = data.unpairedParticipant.name;
+                if (data.unpaired && data.unpaired.name) {
+                    console.log('Unpaired participant found:', data.unpaired.name);
+                    unpairedNameSpan.textContent = data.unpaired.name;
                     unpairedInfoDiv.style.display = 'block';
                     console.log('Set unpairedInfoDiv display to block');
                 } else {
-                    console.log('No unpaired participant found or name missing.');
+                    console.log('No unpaired participant found.');
                     unpairedInfoDiv.style.display = 'none';
                     console.log('Set unpairedInfoDiv display to none');
                 }
@@ -151,6 +165,12 @@
                 console.error('Error: Could not find unpaired-info or unpaired-name elements!');
             }
             // --- End display unpaired ---
+
+            // --- NEW: Display Absent Participants ---
+            currentAbsentParticipants = data.absent || []; // <<< Store absent list
+            renderAbsentList(currentAbsentParticipants);
+            pairAbsentButton.style.display = currentAbsentParticipants.length > 0 ? 'block' : 'none'; // Show button only if there are absent people
+            // --- End Display Absent ---
         });
 
         socket.on('pairingError', (message) => { console.error('Pairing error:', message); alert(`配對失敗：${message}`); });
@@ -159,10 +179,15 @@
             console.log('Game reset');
             currentCardsState = [];
             currentPairings = [];
-            renderCards([]); // Re-render empty placeholders
+            currentAbsentParticipants = []; // <<< Reset absent list
+            renderCards([]);
             resultsList.innerHTML = '<li>尚無配對結果</li>';
             assignDatesButton.disabled = true;
-            unpairedInfoDiv.style.display = 'none'; // Hide unpaired on reset
+            unpairedInfoDiv.style.display = 'none';
+            absentListContainer.style.display = 'none'; // <<< Hide absent container
+            pairAbsentButton.style.display = 'none';   // <<< Hide absent button
+            pairAbsentButton.disabled = false; // <<< Re-enable on reset
+            pairAbsentButton.textContent = '為未參與者配對並加入日期分配'; // <<< Reset text
             // Stop music on reset maybe?
              if (isPlaying) {
                  bgMusic.pause();
@@ -170,6 +195,25 @@
                  isPlaying = false;
              }
         });
+
+        // --- NEW: Listener for final date assignments ---
+        socket.on('updateDateAssignments', (data) => {
+            console.log('Received final date assignments:', data);
+            if (data && data.assignments) {
+                renderDateAssignments(data.assignments); // Re-render the date assignment section
+                // Optionally disable the pairAbsentButton now
+                pairAbsentButton.disabled = true;
+                pairAbsentButton.textContent = '日期已分配 (含未參與者)';
+            } else {
+                console.error('Received invalid data for updateDateAssignments:', data);
+                alert('更新日期分配時發生錯誤。');
+            }
+        });
+        socket.on('dateAssignmentError', (message) => {
+            console.error('Date assignment error:', message);
+            alert(`日期分配失敗：${message}`);
+        });
+        // --- End Listener ---
 
         // --- Rendering Functions ---
         function renderCards(cardsData) {
@@ -231,12 +275,12 @@
          // --- Date Assignment Logic ---
          assignDatesButton.addEventListener('click', () => {
              if (!currentPairings || currentPairings.length === 0) {
-                 alert('目前沒有配對結果可供分配日期！');
+                 alert('目前沒有已抽卡配對結果可供分配日期！');
                  return;
              }
-             console.log('Assigning dates...');
-             // Define presentation dates
-             const dates = ['4/15', '4/22', '4/29', '5/6', '5/13', '5/20']; // Example dates
+             console.log('Assigning dates for confirmed pairings only...');
+             // Logic remains the same, but only uses currentPairings (confirmed ones)
+             const dates = ['4/15', '4/22', '4/29', '5/6', '5/13', '5/20'];
              const shuffledPairings = [...currentPairings].sort(() => Math.random() - 0.5);
              const assignments = {};
              dates.forEach(date => assignments[date] = []);
@@ -252,8 +296,8 @@
                  assignments[date] = shuffledPairings.slice(currentIndex, endIndex);
                  currentIndex = endIndex;
              }
-             console.log('Date assignments:', assignments);
-             renderDateAssignments(assignments);
+             console.log('Date assignments (confirmed only):', assignments);
+             renderDateAssignments(assignments); // This function now renders all assigned groups
          });
 
          function renderDateAssignments(assignments) {
@@ -345,6 +389,35 @@
             socket.emit('revealCard', { cardId: 1, name: '測試A' }); // Simulate reveals
             socket.emit('revealCard', { cardId: 5, name: '測試C 職稱' });
         });
+
+        // --- NEW: Render Absent List ---
+        function renderAbsentList(absentNames) {
+            absentList.innerHTML = ''; // Clear list
+            if (!absentNames || absentNames.length === 0) {
+                absentList.innerHTML = '<li>無</li>';
+                absentListContainer.style.display = 'none'; // Hide container if empty
+                return;
+            }
+            absentNames.forEach(name => {
+                const li = document.createElement('li');
+                li.textContent = name;
+                absentList.appendChild(li);
+            });
+            absentListContainer.style.display = 'block'; // Show container
+        }
+        // --- End Render Absent List ---
+
+        // --- NEW: Pair Absent Button Logic ---
+        pairAbsentButton.addEventListener('click', () => {
+            if (!currentAbsentParticipants || currentAbsentParticipants.length === 0) {
+                alert('沒有未參與者需要配對。');
+                return;
+            }
+            console.log('Requesting to pair absent participants:', currentAbsentParticipants);
+            socket.emit('pairAndAssignAbsent', { absentNames: currentAbsentParticipants }); // Send names to server
+            // The server will handle pairing, merge results, and trigger date assignment update
+        });
+        // --- End Pair Absent Button Logic ---
 
     </script>
 </body>

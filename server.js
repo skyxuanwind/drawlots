@@ -36,6 +36,16 @@ const io = socketIo(server, {
     transports: ['websocket']
 });
 
+// --- NEW: Default Participant List ---
+const defaultParticipantList = [
+    '楊攸仁', '陳玥月', '何玲君', '李思賢', '吳岳軒', '吳佳羽', '施建安', '吳金融', '熊若堯', '李子萱',
+    '陳邑歆', '李冬梅', '洪千貽', '倪暉雅', '李雅婷', '李侑昌', '賴奕銘', '李明憲', '張智堯', '李阡瑅',
+    '温志文', '張禎娟', '段兆陽', '吳瑞文', '朱玲瑤', '林詠儀', '杜國勇', '林才達', '洪銘駿', '王杙鋌',
+    '李庚育', '石昇弘', '劉耀尹', '陳致佐', '梁家菖', '張立群', '張泰祥', '李承書', '林祥禔', '王瑞謙',
+    '王子伊', '陳仕良', '黃裕峰', '陳家祥', '陳志豪', '郭馥瑜', '林弘偉', '黃仲毅', '董帛融', '歐政儒'
+];
+console.log(`Default participant list loaded with ${defaultParticipantList.length} names.`);
+
 // --- 資料結構 ---
 // 參與者: socket.id -> { name: string, joined: boolean, confirmed: boolean, type: 'screen' | 'mobile' | 'unknown', visualCardId: number | null }
 const participants = new Map();
@@ -343,6 +353,88 @@ io.on('connection', (socket) => {
   socket.on('error', (err) => {
       console.error(`Socket error for ${socket.id}:`, err);
   });
+
+  // --- NEW: Handle Pairing and Assigning Absent Participants ---
+  socket.on('pairAndAssignAbsent', (data) => {
+      console.log('Received request to pair absent participants:', data);
+      const absentNames = data.absentNames || [];
+
+      if (absentNames.length === 0) {
+          console.log('No absent names to pair.');
+          return; // Nothing to do
+      }
+
+      // --- Pair the absent participants ---
+      const shuffledAbsent = shuffleArray([...absentNames]);
+      const absentPairings = [];
+      let absentUnpaired = null; // Possible unpaired among absent
+      // Start group numbers after the last confirmed group number
+      let currentMaxGroup = 0;
+      if (pairingResults.length > 0) {
+           currentMaxGroup = Math.max(...pairingResults.map(p => p.group));
+      }
+      let absentGroupNumber = currentMaxGroup + 1;
+
+      for (let i = 0; i < shuffledAbsent.length; i += 2) {
+          const pair = [];
+          const member1 = { id: `absent_${i}`, name: shuffledAbsent[i] }; // Use pseudo-ID for absent
+          pair.push(member1);
+
+          let member2 = null;
+          if (i + 1 < shuffledAbsent.length) {
+              member2 = { id: `absent_${i+1}`, name: shuffledAbsent[i+1] };
+              pair.push(member2);
+          } else {
+              absentUnpaired = member1; // Track the unpaired absent person
+              console.log(`Absent participant ${member1.name} is unpaired in the補位 pairing.`);
+              continue; // Skip creating a pair for the unpaired
+          }
+           // Only add pairs with two members
+           absentPairings.push({ group: absentGroupNumber++, members: pair });
+      }
+      console.log('Generated pairings for absent:', JSON.stringify(absentPairings, null, 2));
+      if (absentUnpaired) console.log('Unpaired absent participant:', absentUnpaired.name);
+
+      // --- Merge confirmed and absent pairings ---
+      // Ensure pairingResults is an array
+      const combinedPairings = (Array.isArray(pairingResults) ? pairingResults : []).concat(absentPairings);
+      console.log(`Total ${combinedPairings.length} pairings (confirmed + absent) to assign dates.`);
+
+      // --- Assign Dates to ALL Pairings ---
+      if (combinedPairings.length === 0) {
+          console.warn('No pairings available (neither confirmed nor absent) to assign dates.');
+          broadcastToScreens('dateAssignmentError', '沒有任何配對組可分配日期。');
+          return;
+      }
+
+      const dates = ['4/15', '4/22', '4/29', '5/6', '5/13', '5/20']; // Or get from config/admin later
+      const shuffledCombinedPairings = shuffleArray([...combinedPairings]);
+      const finalAssignments = {};
+      dates.forEach(date => finalAssignments[date] = []);
+
+      const numTotalPairings = shuffledCombinedPairings.length;
+      const numDates = dates.length;
+      const baseGroupsPerDate = Math.floor(numTotalPairings / numDates);
+      const remainderGroups = numTotalPairings % numDates;
+      let currentIndex = 0;
+
+      for (let i = 0; i < numDates; i++) {
+          const date = dates[i];
+          const groupsForThisDate = baseGroupsPerDate + (i < remainderGroups ? 1 : 0);
+          const endIndex = currentIndex + groupsForThisDate;
+          finalAssignments[date] = shuffledCombinedPairings.slice(currentIndex, endIndex);
+          currentIndex = endIndex;
+      }
+      console.log('Final date assignments (including absent pairings):', JSON.stringify(finalAssignments, null, 2));
+
+      // --- Broadcast the Final Date Assignments ---
+      broadcastToScreens('updateDateAssignments', { assignments: finalAssignments });
+      console.log('Broadcasted final date assignments to screens.');
+
+       // Optionally, disable the "pair absent" button on the frontend after click?
+       // We can send an event back or let the frontend handle it upon receiving assignments.
+  });
+  // --- End Handle Pairing and Assigning Absent ---
 });
 
 // --- 核心遊戲邏輯 ---
@@ -351,14 +443,15 @@ io.on('connection', (socket) => {
 function startPairingAndReveal() {
     // 1. 收集已確認的參與者
     const confirmedParticipants = [];
+    const confirmedNames = new Set(); // 用 Set 方便快速查找
     participants.forEach((pInfo, socketId) => {
-        if (pInfo.type === 'mobile' && pInfo.confirmed) {
-            // 確保他們確實有分配到視覺卡牌 (理論上應該要有)
-             if (pInfo.visualCardId) {
-                confirmedParticipants.push({ id: socketId, name: pInfo.name, visualCardId: pInfo.visualCardId });
-             } else {
-                 console.warn(`Confirmed participant ${pInfo.name} (${socketId}) is missing a visualCardId!`);
-             }
+        if (pInfo.type === 'mobile' && pInfo.confirmed && pInfo.name) { // 確保有名字
+            if (pInfo.visualCardId) {
+                confirmedParticipants.push({ id: socketId, name: pInfo.name.trim(), visualCardId: pInfo.visualCardId });
+                confirmedNames.add(pInfo.name.trim()); // 加入 Set，去除前後空白
+            } else {
+                console.warn(`Confirmed participant ${pInfo.name} (${socketId}) is missing a visualCardId!`);
+            }
         }
     });
 
@@ -370,101 +463,95 @@ function startPairingAndReveal() {
 
     console.log(`Starting pairing for ${confirmedParticipants.length} participants...`);
 
-    // 2. 隨機排序參與者 (進行配對)
+    // 2. 計算配對 (只針對已確認者)
     const shuffledParticipants = shuffleArray([...confirmedParticipants]);
-    pairingResults = [];
+    pairingResults = []; // 重設配對結果
     let groupNumber = 1;
+    let unpairedParticipant = null; // 可能的輪空者
+
     for (let i = 0; i < shuffledParticipants.length; i += 2) {
         const pair = [];
         const member1 = shuffledParticipants[i];
-        pair.push({ id: member1.id, name: member1.name }); // 配對結果只需要 id 和 name
+        pair.push({ id: member1.id, name: member1.name });
 
         let member2 = null;
         if (i + 1 < shuffledParticipants.length) {
             member2 = shuffledParticipants[i + 1];
             pair.push({ id: member2.id, name: member2.name });
         } else {
-             pair.push({ id: null, name: '輪空' });
-             console.log(`Participant ${member1.name} (${member1.id}) is unpaired this round.`);
+            // 處理輪空者
+            unpairedParticipant = { id: member1.id, name: member1.name }; // 記錄輪空者資訊
+            console.log(`Participant ${member1.name} (${member1.id}) is unpaired this round.`);
+            // 不將輪空者加入 pairingResults，輪空者透過獨立欄位傳遞
+            continue; // 跳過這次迴圈，不產生輪空者的組
         }
         pairingResults.push({ group: groupNumber++, members: pair });
 
-        // --- 同步進行視覺卡牌揭曉準備 ---
-        // 標記成員1的視覺卡牌為已揭曉
+        // --- 同步進行視覺卡牌揭曉準備 (這部分不變) ---
         const visualCard1 = visualCards.find(vc => vc.id === member1.visualCardId);
-        if (visualCard1) {
-            visualCard1.revealed = true;
-        }
-        // 標記成員2的視覺卡牌為已揭曉 (如果存在)
+        if (visualCard1) { visualCard1.revealed = true; }
         if (member2) {
             const visualCard2 = visualCards.find(vc => vc.id === member2.visualCardId);
-             if (visualCard2) {
-                 visualCard2.revealed = true;
-             }
+            if (visualCard2) { visualCard2.revealed = true; }
         }
     }
-    console.log('Generated pairings:', JSON.stringify(pairingResults, null, 2));
-
-    // --- Find unpaired participant ---
-    const pairedIds = new Set();
-    pairingResults.forEach(pair => {
-        pair.members.forEach(member => {
-            if (member && member.id) { // Check member and id exist
-                pairedIds.add(member.id);
-            }
-        });
-    });
-
-    let unpairedParticipant = null;
-    confirmedParticipants.forEach(p => {
-        if (!pairedIds.has(p.id)) {
-            unpairedParticipant = p; // Should be at most one
-        }
-    });
+    console.log('Generated pairings (confirmed only):', JSON.stringify(pairingResults, null, 2));
     if (unpairedParticipant) {
-        console.log(`Unpaired participant found: ${unpairedParticipant.name}`);
+         console.log(`Unpaired participant found: ${unpairedParticipant.name}`);
     }
-    // --- End find unpaired ---
+
+    // --- NEW: 計算未參與者 ---
+    const absentParticipants = defaultParticipantList.filter(name => !confirmedNames.has(name.trim()));
+    console.log(`Absent participants (${absentParticipants.length}):`, absentParticipants);
+    // --- End Calculate Absent ---
+
 
     // --- 揭曉階段 ---
-    // 3. 向大螢幕廣播配對結果 (包含輪空者資訊)
+    // 3. 向大螢幕廣播結果 (包含配對、輪空者、未參與者)
     broadcastToScreens('revealResults', {
-        pairings: pairingResults,
-        unpaired: unpairedParticipant // Send null if everyone is paired
+        pairings: pairingResults, // 只包含實際配對的組
+        unpaired: unpairedParticipant, // 實際輪空者 (null 如果沒有)
+        absent: absentParticipants   // 未參與者名單
     });
 
-    // 4. 向大螢幕廣播每張卡牌的揭曉事件 (包含名字)
+    // 4. 向大螢幕廣播卡牌揭曉事件 (只針對已確認者)
     confirmedParticipants.forEach(p => {
-         // Ensure visualCardId exists before broadcasting reveal
-         if (p.visualCardId) { 
-             broadcastToScreens('revealCard', { cardId: p.visualCardId, name: p.name });
-         } else {
-              console.warn(`Participant ${p.name} confirmed but missing visualCardId for reveal.`);
-         }
+        if (p.visualCardId) {
+            broadcastToScreens('revealCard', { cardId: p.visualCardId, name: p.name });
+        } else {
+            console.warn(`Participant ${p.name} confirmed but missing visualCardId for reveal.`);
+        }
     });
     console.log('Sent reveal commands for visual cards to screens.');
 
-    // 5. 向手機端發送各自的配對夥伴
-    pairingResults.forEach(pair => {
+    // 5. 向手機端發送各自的配對夥伴 (只針對已確認者)
+    pairingResults.forEach(pair => { // 只遍歷實際配對的組
         const member1 = pair.members[0];
-        const member2 = pair.members.length > 1 ? pair.members[1] : null;
+        const member2 = pair.members[1]; // 這裡保證有 member2
 
+        // 發送給 member1
         if (member1 && member1.id) {
             const socket1 = io.sockets.sockets.get(member1.id);
             if (socket1) {
-                const partner = (member2 && member2.id) ? { name: member2.name } : null;
-                socket1.emit('yourPairing', { partner: partner, group: pair.group });
+                socket1.emit('yourPairing', { partner: { name: member2.name }, group: pair.group });
             } else { console.warn(`Socket not found for participant ${member1.name} (${member1.id})`); }
         }
+        // 發送給 member2
         if (member2 && member2.id) {
-            const socket2 = io.sockets.sockets.get(member2.id);
-            if (socket2) {
-                const partner = member1 ? { name: member1.name } : null;
-                 socket2.emit('yourPairing', { partner: partner, group: pair.group });
-            } else { console.warn(`Socket not found for participant ${member2.name} (${member2.id})`); }
-        }
+             const socket2 = io.sockets.sockets.get(member2.id);
+             if (socket2) {
+                 socket2.emit('yourPairing', { partner: { name: member1.name }, group: pair.group });
+             } else { console.warn(`Socket not found for participant ${member2.name} (${member2.id})`); }
+         }
     });
-    console.log('Sent individual pairing results to mobile clients.');
+    // 告知輪空者
+     if (unpairedParticipant && unpairedParticipant.id) {
+         const unpairedSocket = io.sockets.sockets.get(unpairedParticipant.id);
+         if (unpairedSocket) {
+              unpairedSocket.emit('yourPairing', { partner: null, group: '輪空' }); // 告知手機端輪空
+         }
+     }
+    console.log('Sent individual pairing results (including unpaired) to mobile clients.');
     broadcastToScreens('pairingComplete');
 }
 
@@ -475,10 +562,10 @@ function resetGame() {
     pairingResults = [];
     initializeVisualCards(); // 重設視覺卡牌狀態
 
-    broadcastToAll('gameReset');
+    broadcastToAll('gameReset'); // 會觸發前端清空顯示
     broadcastToScreens('participantState', getPublicParticipantState());
     broadcastToScreens('updateCards', getPublicCardState()); // 發送初始卡牌狀態
-    broadcastToScreens('showPairingResults', []); // 清空配對結果顯示
+    // 不需要特別清空 absent list，因為 gameReset 會處理
 
     console.log('Game reset complete.');
 }
