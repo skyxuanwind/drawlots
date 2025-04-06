@@ -129,23 +129,26 @@
             } else { console.warn(`Card element not found for reveal: ${cardId}`); }
         });
 
-        socket.on('showPairingResults', (data) => { // Now receives an object
-            const pairings = data.pairings;
-            const unpaired = data.unpaired;
-
-            console.log('Pairing results:', pairings);
-            console.log('Unpaired participant:', unpaired);
-            
-            currentPairings = pairings; // Still store pairings for date assignment
-            renderPairingResults(pairings);
-            assignDatesButton.disabled = !(pairings && pairings.length > 0);
+        socket.on('revealResults', (data) => {
+            console.log('Received revealResults event. Data:', data);
+            currentPairings = data.pairings || [];
+            renderPairingResults(currentPairings);
+            assignDatesButton.disabled = currentPairings.length === 0;
 
             // --- Display unpaired participant ---
-            if (unpaired) {
-                unpairedNameSpan.textContent = unpaired.name;
-                unpairedInfoDiv.style.display = 'block'; // Show the div
+            if (unpairedInfoDiv && unpairedNameSpan) {
+                if (data.unpairedParticipant && data.unpairedParticipant.name) {
+                    console.log('Unpaired participant found:', data.unpairedParticipant.name);
+                    unpairedNameSpan.textContent = data.unpairedParticipant.name;
+                    unpairedInfoDiv.style.display = 'block';
+                    console.log('Set unpairedInfoDiv display to block');
+                } else {
+                    console.log('No unpaired participant found or name missing.');
+                    unpairedInfoDiv.style.display = 'none';
+                    console.log('Set unpairedInfoDiv display to none');
+                }
             } else {
-                unpairedInfoDiv.style.display = 'none'; // Hide if everyone is paired
+                console.error('Error: Could not find unpaired-info or unpaired-name elements!');
             }
             // --- End display unpaired ---
         });
