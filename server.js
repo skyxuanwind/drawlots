@@ -428,7 +428,7 @@ function startPairingAndReveal() {
 
     // --- 揭曉階段 ---
     // 3. 向大螢幕廣播配對結果 (包含輪空者資訊)
-    broadcastToScreens('showPairingResults', {
+    broadcastToScreens('revealResults', {
         pairings: pairingResults,
         unpaired: unpairedParticipant // Send null if everyone is paired
     });
