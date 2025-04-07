@@ -42,7 +42,8 @@ const defaultParticipantList = [
     '陳邑歆', '李冬梅', '洪千貽', '倪暉雅', '李雅婷', '李侑昌', '賴奕銘', '李明憲', '張智堯', '李阡瑅',
     '温志文', '張禎娟', '段兆陽', '吳瑞文', '朱玲瑤', '林詠儀', '杜國勇', '林才達', '洪銘駿', '王杙鋌',
     '李庚育', '石昇弘', '劉耀尹', '陳致佐', '梁家菖', '張立群', '張泰祥', '李承書', '林祥禔', '王瑞謙',
-    '王子伊', '陳仕良', '黃裕峰', '陳家祥', '陳志豪', '郭馥瑜', '林弘偉', '黃仲毅', '董帛融', '歐政儒'
+    '王子伊', '陳仕良', '黃裕峰', '陳家祥', '陳志豪', '郭馥瑜', '林弘偉', '黃仲毅', '董帛融', '歐政儒',
+    '陳建男'
 ];
 console.log(`Default participant list loaded with ${defaultParticipantList.length} names.`);
 
@@ -51,7 +52,7 @@ console.log(`Default participant list loaded with ${defaultParticipantList.lengt
 const participants = new Map();
 // 視覺卡牌: { id: number, drawn: boolean, revealed: boolean } - 只用於視覺追蹤
 let visualCards = [];
-const TOTAL_VISUAL_CARDS = 50; // <-- 改回 50
+const TOTAL_VISUAL_CARDS = 51;
 let pairingResults = []; // 儲存配對結果
 
 // --- 初始化視覺卡牌 ---
